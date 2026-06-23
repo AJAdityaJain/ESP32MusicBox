@@ -5,6 +5,13 @@ bool init_sd()
     return SD.begin(SD_CS_PIN);
 }
 
+
+    // esp_bd_addr_t *addr_ptr = a2dp_source.get_last_peer_address();
+    // memcpy(paired_addr, *addr_ptr, sizeof(esp_bd_addr_t));
+    // has_paired_addr = save_addr(paired_addr);
+    // if (has_paired_addr)
+    // a2dp_source.connect_to(paired_addr);
+
 bool save_addr(const esp_bd_addr_t addr)
 {
     if (!(addr[0] && addr[1] && addr[2] && addr[3] && addr[4] && addr[5]))
