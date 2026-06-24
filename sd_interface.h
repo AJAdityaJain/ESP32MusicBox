@@ -1,6 +1,4 @@
 #pragma once
-#include "SD.h"
-#include "SPI.h"
 #include "audio_frame.h"
 
 
