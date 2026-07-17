@@ -2,7 +2,7 @@
 #include "audio_frame.h"
 
 
-#define ADDR_FILE       "/bt_paired.txt"
+#define ADDR_FILE       "/.lira/bt_paired.txt"
 #define SD_CS_PIN       5
 
 bool init_sd();

@@ -63,7 +63,7 @@ void setup()
   u8g2.sendBuffer();
   delay(5);
 
-  mp3File = SD.open("/aud.mp3");
+  mp3File = SD.open("/tame/aud.mp3");
   u8g2.drawLine(126,52,126,62);
 
   if (!mp3File)
@@ -75,7 +75,12 @@ void setup()
   delay(5);
 
 
-  pcmMutex = xSemaphoreCreateMutex();
+  if (pcmMutex == nullptr)
+  {
+    pcmMutex = xSemaphoreCreateMutex();
+  }
+  pcmHead = 0;
+  pcmTail = 0;
   helix.begin();
   helix.setDataCallback(pcmCallback);
 
@@ -87,8 +92,6 @@ void setup()
   u8g2.drawStr(55,45,"LIRA");
   u8g2.sendBuffer();
 
-  delay(900);
-  a2dp_source.connect_to(paired_addr);
 }
 
 void loop()
