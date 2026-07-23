@@ -1,14 +1,14 @@
 #include "ui.h"
 
-int temporary_T = 0;
-
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx(U8G2_R0, U8X8_PIN_NONE);
 uint16_t touchSamples[AVG_SAMPLES];
 int sampleIndex = 0;
 bool samplesReady = false;
 float touchAverage = 0;
-UIState screenState = HOME;
-int cursor = 0;
+int screenState = HOME;
+int cursor = MUSIC;
+float cursorF = 0;
+int touchTicks = 0;
 
 
 volatile bool uiNeedsUpdate = false;
@@ -38,14 +38,22 @@ void processTouchInTask()
   if (!samplesReady)
     return;
 
+  Serial.println(touchTicks);
+
+
   if (touchAverage - val >= THRESHOLD)
   {
-    // activation — do not update average
-    UIEvent evt = TOUCH;
-    xQueueSend(uiQueue, &evt, 0);
+    if(touchTicks>0 && touchTicks < TOUCH_TICKS_THRESHHOLD){
+      UIEvent evt = TOUCH;
+      xQueueSend(uiQueue, &evt, 0);
+    }
+    touchTicks = 0;
   }
   else
   {
+    if(touchTicks <= TOUCH_TICKS_THRESHHOLD){
+      touchTicks ++;
+    } 
     // normal — update rolling average
     touchSamples[sampleIndex] = val;
     sampleIndex = (sampleIndex + 1) % AVG_SAMPLES;
@@ -55,6 +63,9 @@ void processTouchInTask()
       sum += touchSamples[i];
     touchAverage = sum / AVG_SAMPLES;
   }
+
+    // UIEvent evt = TOUCH;
+    // xQueueSend(uiQueue, &evt, 0);
 }
 
 void IRAM_ATTR encoderISR()
@@ -88,7 +99,11 @@ void IRAM_ATTR encoderISR()
 void onScroll(bool r)
 { 
   if(screenState == HOME){
-    cursor += r ? 1 : -1;
+    cursorF += r ? 0.3 : -0.3;
+    if(cursorF > 4f) cursorF = 1f;
+    if(cursorF < 1f) cursorF = 4f;
+
+    cursor = round(cursorF);
   }
 
   uiNeedsUpdate = true;
@@ -96,22 +111,90 @@ void onScroll(bool r)
 
 void onTouch()
 {
-  temporary_T++;
+  Serial.println(32);
+  if(screenState == HOME){
+
+    if(cursor < 1 || cursor > 4) return;
+    screenState = cursor;
+  }
   uiNeedsUpdate = true;
+}
+
+inline void logo(int x, int y){
+
+  ctx.drawRFrame(x, y, 13, 16, 5);
+  
 }
 
 void drawScreen()
 {
   ctx.clearBuffer();
-  // ctx.setCursor(0, 40);
-  // ctx.printf("L:%d R:%d T:%d", temporary_L, temporary_R, temporary_T);
   if(screenState == HOME){
-    for(int i = 0; i < UIStateLen; i++){
-      if(i != HOME){
-        ctx.drawStr(10, 20 + i * 10, (screenState == (UIState)i) ? ">" : " ");
-      }
-    }
+    //HERE CURSOR IS UIState INDEX
+    // BT
+    if(cursor == BLUETOOTH)ctx.drawRFrame(2, 8, 20, 20, 2);
+    ctx.drawLine(12, 10, 12, 26);
+    ctx.drawLine(11, 10, 11, 26);
+    ctx.drawLine(6, 14, 18, 22);
+    ctx.drawLine(6, 15, 18, 23);
+    ctx.drawLine(6, 22, 18, 14);
+    ctx.drawLine(6, 23, 18, 15);
+    ctx.drawLine(12, 10, 18, 14);
+    ctx.drawLine(12, 9, 18, 13);
+    ctx.drawLine(12, 26, 18, 22);
+    ctx.drawLine(12, 25, 18, 21);
+    
+    // Music
+    if(cursor == WIFI)ctx.drawRFrame(27, 8, 20, 20, 2);
+    
+    ctx.drawLine(29,25,29,18);
+    ctx.drawLine(30,25,30,19);
+    ctx.drawLine(29,17,36,10);
+    ctx.drawLine(30,18,37,11);
+    ctx.drawLine(38,10,44,10);
+    ctx.drawLine(39,11,44,11);
+
+    ctx.drawLine(33,25,33,20);
+    ctx.drawLine(34,25,34,21);
+    ctx.drawLine(33,19,38,14);
+    ctx.drawLine(34,20,39,15);
+    ctx.drawLine(39,14,44,14);
+    ctx.drawLine(40,15,44,15);
+
+    ctx.drawLine(37,25,37,22);
+    ctx.drawLine(38,25,38,23);
+    ctx.drawLine(37,21,40,18);
+    ctx.drawLine(38,22,41,19);
+    ctx.drawLine(41,18,44,18);
+    ctx.drawLine(42,19,44,19);
+
+    ctx.drawLine(41,23,41,25);
+    ctx.drawLine(42,22,42,26);
+    ctx.drawLine(43,22,43,26);
+    ctx.drawLine(44,22,44,26);
+    ctx.drawLine(45,23,45,25);
+
+    // Settings
+    if(cursor == SETTINGS)ctx.drawRFrame(52, 8, 20, 20, 2);
+    logo(55, 10);
+
+    if(cursor == MUSIC)ctx.drawRFrame(77, 8, 20, 20, 2);
+
+    //rect
+
+    ctx.drawBox(81, 11, 12, 2);
+    ctx.drawBox(81, 13, 2, 10);
+    ctx.drawBox(91, 13, 2, 10);
+    ctx.drawBox(82, 21, 3, 3);
+    ctx.drawBox(92, 21, 3, 3);
+    ctx.drawLine(85,22,85,23);
+    ctx.drawLine(95,22,95,23);
+
+
+
+
   }
+
   ctx.sendBuffer();
 
 }
