@@ -11,8 +11,9 @@
 #define AVG_SAMPLES 16
 #define TOUCH_TICKS_THRESHHOLD 15
 #define PLAYLIST_PAGE_SIZE 4
+#define SENSITIVITY 3
 
-extern volatile bool uiNeedsUpdate;
+extern volatile bool dirty;
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx;
 extern QueueHandle_t uiQueue;
 
@@ -35,6 +36,52 @@ enum UIEvent
   TOUCH
 };
 
+class BaseScreen
+{
+public:
+  virtual ~BaseScreen() {}
+  virtual void onScroll(bool right);
+  virtual void onTouch() = 0;
+  virtual void onRender() = 0;
+  virtual inline int id() const = 0;
+protected:
+  int cursor_;
+  int limit_;
+};
+
+class HomeScreen : public BaseScreen
+{
+public:
+  HomeScreen();
+  void onTouch() override;
+  void onRender() override;
+  inline int id() const override { return HOME; }
+};
+
+class MusicScreen : public BaseScreen
+{
+public:
+  MusicScreen();
+  void onTouch() override;
+  void onRender() override;
+  inline int id() const override { return MUSIC; }
+};
+
+class PlaylistScreen : public BaseScreen
+{
+public:
+  PlaylistScreen();
+  void onScroll(bool right) override;
+  void onTouch() override;
+  void onRender() override;
+  inline int id() const override { return PLAYLISTS; }
+
+private:
+  int offset_;
+  int playlistCount_;
+  String playlistNames_[PLAYLIST_PAGE_SIZE];
+};
+
 // encoder
 static const int8_t encoder_transition_table[16] = {
     0, 1, -1, 0,
@@ -43,10 +90,8 @@ static const int8_t encoder_transition_table[16] = {
     0, -1, 1, 0};
 
 
-extern int screenState;
-// uint16_t array pointer to hold selected playlist item list address(4 bytes) without any size
 extern uint16_t* playlistItems;
-extern int size;
+extern int playlistSize;
 
 void uiTask(void *pvParameters);
 void initTouchSamples();

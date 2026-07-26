@@ -5,6 +5,7 @@ int16_t pcmBuf[PCM_BUF_SIZE];
 volatile int pcmHead = 0;
 volatile int pcmTail = 0;
 volatile bool isPlaying = false;
+File activeFile;
 
 void audio_state_changed(esp_a2d_audio_state_t state, void *ptr)
 {
