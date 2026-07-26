@@ -13,6 +13,7 @@ extern int16_t pcmBuf[PCM_BUF_SIZE];
 extern volatile int pcmHead;
 extern volatile int pcmTail;
 extern volatile bool isPlaying;
+extern File activeFile;
 
 void audio_state_changed(esp_a2d_audio_state_t state, void *ptr);
 void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *);

@@ -7,8 +7,13 @@ bool samplesReady = false;
 float touchAverage = 0;
 int screenState = HOME;
 int cursor = MUSIC;
+int offset = 0;
 float cursorF = 0;
 int touchTicks = 0;
+String playlistNames[PLAYLIST_PAGE_SIZE];
+int playlistCount = -1;
+uint16_t* playlistItems = nullptr;
+int size = 0;
 
 
 volatile bool uiNeedsUpdate = false;
@@ -38,22 +43,22 @@ void processTouchInTask()
   if (!samplesReady)
     return;
 
-  Serial.println(touchTicks);
+  // Serial.println(touchTicks);
 
 
   if (touchAverage - val >= THRESHOLD)
+  {
+    if(touchTicks <= TOUCH_TICKS_THRESHHOLD){
+      touchTicks ++;
+    } 
+  }
+  else
   {
     if(touchTicks>0 && touchTicks < TOUCH_TICKS_THRESHHOLD){
       UIEvent evt = TOUCH;
       xQueueSend(uiQueue, &evt, 0);
     }
     touchTicks = 0;
-  }
-  else
-  {
-    if(touchTicks <= TOUCH_TICKS_THRESHHOLD){
-      touchTicks ++;
-    } 
     // normal — update rolling average
     touchSamples[sampleIndex] = val;
     sampleIndex = (sampleIndex + 1) % AVG_SAMPLES;
@@ -100,24 +105,77 @@ void onScroll(bool r)
 { 
   if(screenState == HOME){
     cursorF += r ? 0.3 : -0.3;
-    if(cursorF > 4f) cursorF = 1f;
-    if(cursorF < 1f) cursorF = 4f;
+    if(cursorF > SETTINGS) cursorF = MUSIC;
+    if(cursorF < MUSIC) cursorF = SETTINGS;
 
     cursor = round(cursorF);
   }
+  else if(screenState == MUSIC){
+    cursorF += r ? 0.3 : -0.3;
+    if(cursorF > ARTISTS) cursorF = SETTINGS;
+    if(cursorF < SETTINGS) cursorF = ARTISTS;
+
+    cursor = round(cursorF);
+    if(cursor == SETTINGS) cursor = HOME;
+  }
+  else if(screenState == PLAYLISTS){
+    cursorF += r ? 1 : -1;
+    if(cursorF-(offset*PLAYLIST_PAGE_SIZE) > PLAYLIST_PAGE_SIZE-1){ 
+      offset++;
+      playlistCount = -1;      
+    };
+    if(cursorF-(offset*PLAYLIST_PAGE_SIZE) < 0){
+      if(offset > 0) {offset--;      playlistCount = -1;}
+      else{
+        cursorF = 0;
+      }
+    }
+    cursor = round(cursorF);
+  }
+
 
   uiNeedsUpdate = true;
 }
 
 void onTouch()
 {
-  Serial.println(32);
+  // Serial.println(32);
   if(screenState == HOME){
 
-    if(cursor < 1 || cursor > 4) return;
+    if(cursor < MUSIC || cursor > SETTINGS) return;
     screenState = cursor;
+    if(screenState == MUSIC)cursor = PLAYLISTS;      
   }
-  uiNeedsUpdate = true;
+  else if(screenState == MUSIC){
+    if((cursor < BROWSE || cursor > ARTISTS)&&cursor != HOME) return;
+    screenState = cursor;
+    if(screenState == HOME)cursor = MUSIC;
+    if(screenState == PLAYLISTS){cursor = 0;offset = 0;}
+  }
+  else if(screenState == PLAYLISTS){
+    if(cursor < 0 || cursor-offset*PLAYLIST_PAGE_SIZE > playlistCount-1) return;
+    Serial.printf("Selected playlist: %s\n", playlistNames[cursor-offset*PLAYLIST_PAGE_SIZE].c_str());
+    // get selected playlist items
+    if(playlistItems != nullptr){
+      free(playlistItems);
+      playlistItems = nullptr;
+    }
+    size = get_playlist_items(playlistNames[cursor-offset*PLAYLIST_PAGE_SIZE].c_str(),playlistItems);
+    if(size == 0){
+      Serial.println("Failed to load playlist items");
+    }
+    //display all items in playlistItems on serial
+    for(int i=0;i<size;i++){
+      Serial.printf("Item %d: %d\n", i, playlistItems[i]);
+    }
+    
+    screenState = PLAYSCREEN;
+  }
+  else if(screenState == PLAYSCREEN){
+    isPlaying = !isPlaying;
+  }
+
+uiNeedsUpdate = true;
 }
 
 inline void logo(int x, int y){
@@ -190,9 +248,34 @@ void drawScreen()
     ctx.drawLine(85,22,85,23);
     ctx.drawLine(95,22,95,23);
 
-
-
-
+  }
+  else if(screenState == MUSIC){
+    //reduce spaces
+    if(cursor == HOME)ctx.drawRFrame(0, 0, 128, 15, 2);
+    ctx.drawStr(1, 13, "Home");
+    if(cursor == BROWSE)ctx.drawRFrame(0, 15, 128, 15, 2);
+    ctx.drawStr(1, 28, "| Browse");
+    if(cursor == PLAYLISTS)ctx.drawRFrame(0, 30, 128, 15, 2);
+    ctx.drawStr(1, 43, "| Playlists");
+    if(cursor == ARTISTS)ctx.drawRFrame(0, 45, 128, 15, 2);
+    ctx.drawStr(1, 58, "| Artists");
+  }
+  else if(screenState == PLAYLISTS){
+    if (playlistCount == -1){
+      playlistCount = get_playlists_after(offset*PLAYLIST_PAGE_SIZE, playlistNames, PLAYLIST_PAGE_SIZE);
+    }
+    ctx.drawRFrame(0, 15*(cursor-(offset*PLAYLIST_PAGE_SIZE)), 128, 15, 2);
+    for(int i=0;i<playlistCount;i++){
+      if(playlistNames[i].length() > 0)ctx.drawStr(1, (i*15)+13, playlistNames[i].c_str());
+    }    
+  }
+  else if(screenState == PLAYSCREEN){
+    if(isPlaying){
+      ctx.drawStr(1, 13, "Playing");
+    }
+    else{
+      ctx.drawStr(1, 13, "Paused");
+    }
   }
 
   ctx.sendBuffer();

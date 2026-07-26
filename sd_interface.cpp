@@ -64,3 +64,59 @@ bool load_addr(esp_bd_addr_t addr)
 
     return true;
 }
+
+int get_playlists_after(int startIndex, String names[], int maxFiles)
+{
+    if (!SD.exists(PLAYLISTS_DIR))
+        return 0;
+
+    File dir = SD.open(PLAYLISTS_DIR);
+    if (!dir || !dir.isDirectory())
+        return 0;
+
+    int index = 0;
+    int found = 0;
+    File entry = dir.openNextFile();
+    while (entry && found < maxFiles)
+    {
+        if (!entry.isDirectory())
+        {
+            if (index >= startIndex)
+            {
+                names[found++] = String(entry.name());
+            }
+            index++;
+        }
+        entry.close();
+        entry = dir.openNextFile();
+    }
+
+    dir.close();
+    return found;
+}
+
+
+int get_playlist_items(String playlistName, uint16_t*& items){
+    //The file path is the PLAYLISTS_DIR + "/" + playlistName and it contains a list of uint16_t values, it will have no seperators.
+
+    String path = String(PLAYLISTS_DIR) + "/" + playlistName;
+    File f = SD.open(path, FILE_READ);
+    if (!f)
+        return 0;
+
+    int count = f.size() / sizeof(uint16_t);
+    items = (uint16_t*)malloc(count * sizeof(uint16_t));
+    if (!items)
+    {
+        f.close();
+        return 0;
+    }
+
+    for (int i = 0; i < count; i++)
+    {
+        items[i] = f.read();
+    }
+    f.close();
+    return count;
+}
+

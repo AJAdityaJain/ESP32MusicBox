@@ -8,8 +8,7 @@ volatile bool isPlaying = false;
 
 void audio_state_changed(esp_a2d_audio_state_t state, void *ptr)
 {
-  isPlaying = (state == ESP_A2D_AUDIO_STATE_STARTED);
-  Serial.printf("[BT] Audio : %s\n", isPlaying ? "STARTED" : "STOPPED");
+  Serial.printf("[BT] Audio : %s\n", state == ESP_A2D_AUDIO_STATE_STARTED ? "STARTED" : "STOPPED");
 }
 
 void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
@@ -35,7 +34,6 @@ int32_t get_data_frames(Frame *frame, int32_t frame_count)
 {
   if (!isPlaying)
   {
-    Serial.println("Not playing, returning silence");
     memset(frame, 0, frame_count * sizeof(Frame));
     return frame_count;
   }

@@ -1,4 +1,3 @@
-#include "sd_interface.h"
 #include "ui.h"
 
 #include "freertos/semphr.h"
@@ -10,7 +9,6 @@
 using namespace libhelix;
 
 MP3DecoderHelix helix;
-File mp3File;
 
 bool is_connected_or_connecting = false;
 bool has_paired_addr = false;
@@ -60,8 +58,8 @@ void setup()
   ctx.drawLine(1, 1, 1, 10);
   ctx.sendBuffer();
 
-  mp3File = SD.open("/tame/aud.mp3");
-  if (!mp3File)
+  activeFile = SD.open("/tame/aud.mp3");
+  if (!activeFile)
   {
     ctx.drawStr(1, 20, "file missing");
     ctx.sendBuffer();
@@ -107,15 +105,15 @@ void setup()
 
 void loop()
 {
-  if (isPlaying && mp3File)
+  if (isPlaying && activeFile)
   {
-    if (mp3File.available())
+    if (activeFile.available())
     {
       int available = (pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE;
       if (available < PCM_BUF_SIZE * 3 / 4)
       {
         uint8_t chunk[512];
-        int n = mp3File.read(chunk, sizeof(chunk));
+        int n = activeFile.read(chunk, sizeof(chunk));
         if (n > 0)
           helix.write(chunk, n);
       }
@@ -123,7 +121,7 @@ void loop()
     else
     {
       isPlaying = false;
-      mp3File.close();
+      activeFile.close();
       Serial.println("Done.");
     }
   }
