@@ -1,13 +1,16 @@
 #pragma once
-#include "audio_frame.h"
+#include "SD.h"
 
 
-#define ADDR_FILE       "/.lira/bt_paired.txt"
 #define SD_CS_PIN       5
+#define BT_FILE       "/.lira/bt_paired.txt"
 #define PLAYLISTS_DIR   "/.playlists"
+#define INDEX_BIN       "/.lira/index.bin"
+#define ADDR_BIN        "/.lira/addr.bin"
 
-bool init_sd();
-bool save_addr(const esp_bd_addr_t addr);
-bool load_addr(esp_bd_addr_t addr);
-int get_playlists_after(int startIndex, String names[], int maxFiles);
-int get_playlist_items(String playlistName, uint16_t*& items);
+bool SDInit();
+// bool saveBT(const esp_bd_addr_t addr);
+// bool loadBT(esp_bd_addr_t addr);
+int fetchPlaylistsAfter(int startIndex, String names[], int maxFiles);
+int fetchPlaylistItems(String playlistName, uint16_t*& items);
+bool fetchMp3FromIndex(File& f, uint16_t index);

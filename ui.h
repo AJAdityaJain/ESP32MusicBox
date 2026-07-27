@@ -1,8 +1,9 @@
 #pragma once
 #include <U8g2lib.h>
 #include <Wire.h>
-#include "sd_interface.h"
 
+#include "sd_interface.h"
+#include "bt.h"
 
 #define KY040_CLK_PIN 34
 #define KY040_DT_PIN 32
@@ -15,18 +16,7 @@
 
 extern volatile bool dirty;
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx;
-extern QueueHandle_t uiQueue;
-
-
-#define HOME 0
-#define MUSIC 1
-#define BLUETOOTH 2
-#define WIFI 3
-#define SETTINGS 4
-#define BROWSE 5
-#define PLAYLISTS 6
-#define ARTISTS 7
-#define PLAYSCREEN 8
+extern File activeFile;
 
 
 enum UIEvent
@@ -43,7 +33,6 @@ public:
   virtual void onScroll(bool right);
   virtual void onTouch() = 0;
   virtual void onRender() = 0;
-  virtual inline int id() const = 0;
 protected:
   int cursor_;
   int limit_;
@@ -55,7 +44,14 @@ public:
   HomeScreen();
   void onTouch() override;
   void onRender() override;
-  inline int id() const override { return HOME; }
+};
+
+class BTScreen : public BaseScreen
+{
+public:
+  BTScreen();
+  void onTouch() override;
+  void onRender() override;
 };
 
 class MusicScreen : public BaseScreen
@@ -64,7 +60,16 @@ public:
   MusicScreen();
   void onTouch() override;
   void onRender() override;
-  inline int id() const override { return MUSIC; }
+};
+
+class MusicPlayerScreen : public BaseScreen
+{
+public:
+  MusicPlayerScreen();
+  void onTouch() override;
+  void onRender() override;
+  uint16_t* playlistItems_;
+  int playlistSize_;
 };
 
 class PlaylistScreen : public BaseScreen
@@ -74,11 +79,10 @@ public:
   void onScroll(bool right) override;
   void onTouch() override;
   void onRender() override;
-  inline int id() const override { return PLAYLISTS; }
 
 private:
   int offset_;
-  int playlistCount_;
+  int playlistCount_ =-1;
   String playlistNames_[PLAYLIST_PAGE_SIZE];
 };
 
@@ -90,9 +94,5 @@ static const int8_t encoder_transition_table[16] = {
     0, -1, 1, 0};
 
 
-extern uint16_t* playlistItems;
-extern int playlistSize;
-
 void uiTask(void *pvParameters);
-void initTouchSamples();
-void IRAM_ATTR encoderISR();
+void uiInit();

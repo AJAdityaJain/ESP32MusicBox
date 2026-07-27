@@ -6,17 +6,17 @@ int sampleIndex = 0;
 bool samplesReady = false;
 float touchAverage = 0;
 int touchTicks = 0;
-
-uint16_t *playlistItems = nullptr;
-int playlistSize = 0;
+File activeFile;
 
 volatile bool dirty = false;
 
 QueueHandle_t uiQueue;
 
-HomeScreen homeScreen_;
-MusicScreen musicScreen_;
-PlaylistScreen playlistScreen_;
+HomeScreen homeScreen_ = HomeScreen();
+BTScreen btScreen_ = BTScreen();
+MusicScreen musicScreen_ = MusicScreen();
+PlaylistScreen playlistScreen_ = PlaylistScreen();
+MusicPlayerScreen playScreen_ = MusicPlayerScreen();
 
 BaseScreen *activeScreen_ = &homeScreen_;
 
@@ -33,6 +33,7 @@ HomeScreen::HomeScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
 void HomeScreen::onTouch() {
     int option = (cursor_/SENSITIVITY);
     if(option == 0) {activeScreen_ = &musicScreen_;}
+    if(option == 1){activeScreen_ = &btScreen_;}
 };
 void HomeScreen::onRender() {
     // BT
@@ -98,7 +99,15 @@ void HomeScreen::onRender() {
 
 };
 
-MusicScreen::MusicScreen() { cursor_ = PLAYLISTS; limit_=SENSITIVITY*4; }
+BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
+void BTScreen::onTouch(){
+  btAttempt();
+}
+void BTScreen::onRender(){
+  
+}
+
+MusicScreen::MusicScreen() { cursor_ = 0; limit_=SENSITIVITY*4; }
 void MusicScreen::onTouch() {
   int option = (cursor_/SENSITIVITY);
   if(option == 0) activeScreen_ = &homeScreen_;
@@ -117,28 +126,32 @@ void MusicScreen::onRender() {
 
 };
 
-PlaylistScreen::PlaylistScreen() { cursor_ = 0; playlistCount_ == -1; offset_= 0;}
+PlaylistScreen::PlaylistScreen() { cursor_ = 0; playlistCount_ == -1; offset_= 0;Serial.println(playlistCount_);}
 void PlaylistScreen::onTouch() {
-    if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > playlistCount_-1) return;
+  activeScreen_ = &playScreen_;
+  MusicPlayerScreen* casted = (MusicPlayerScreen*)activeScreen_;
+
+  if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > playlistCount_-1) return;
     Serial.printf("Selected playlist: %s\n", playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str());
     // get selected playlist items
-    if(playlistItems != nullptr){
-      free(playlistItems);
-      playlistItems = nullptr;
+    if(casted->playlistItems_ != nullptr){
+      free(casted->playlistItems_);
+      casted->playlistItems_ = nullptr;
     }
-    playlistSize = get_playlist_items(playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str(),playlistItems);
-    if(playlistSize == 0){
+    casted->playlistSize_ = fetchPlaylistItems(playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str(),casted->playlistItems_);
+    if(casted->playlistSize_ == 0){
       Serial.println("Failed to load playlist items");
     }
     //display all items in playlistItems on serial
-    for(int i=0;i<playlistSize;i++){
-      Serial.printf("Item %d: %d\n", i, playlistItems[i]);
+    for(int i=0;i<casted->playlistSize_;i++){
+      Serial.printf("Item %d: %d\n", i, casted->playlistItems_[i]);
     }
 
 };
 void PlaylistScreen::onRender() {
-      if (playlistCount_ == -1){
-      playlistCount_ = get_playlists_after(offset_*PLAYLIST_PAGE_SIZE, playlistNames_, PLAYLIST_PAGE_SIZE);
+    if (playlistCount_ == -1){
+      Serial.println("AAA\n");
+      playlistCount_ = fetchPlaylistsAfter(offset_*PLAYLIST_PAGE_SIZE, playlistNames_, PLAYLIST_PAGE_SIZE);
     }
     ctx.drawRFrame(0, 15*(cursor_-(offset_*PLAYLIST_PAGE_SIZE)), 128, 15, 2);
     for(int i=0;i<playlistCount_;i++){
@@ -148,6 +161,7 @@ void PlaylistScreen::onRender() {
 };
 void PlaylistScreen::onScroll(bool right)
 {
+  Serial.println(playlistCount_);
   cursor_ += right ? 1 : -1;
   if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) > PLAYLIST_PAGE_SIZE - 1)
   {
@@ -168,8 +182,51 @@ void PlaylistScreen::onScroll(bool right)
   }
 }
 
-void initTouchSamples()
+MusicPlayerScreen::MusicPlayerScreen(){cursor_ = 0; playlistSize_=0;}
+void MusicPlayerScreen::onRender(){
+  if (isPlaying)
+  {
+    ctx.drawStr(1, 28, "Playing");
+  }
+  else{
+    ctx.drawStr(1, 28, "paused");
+  }
+}
+void MusicPlayerScreen::onTouch(){
+  isPlaying =!isPlaying;
+}
+
+void IRAM_ATTR encoderISR()
 {
+  static int last_state = 0;
+  static int8_t accumulator = 0;
+
+  int state = (digitalRead(KY040_CLK_PIN) << 1) | digitalRead(KY040_DT_PIN);
+  if (state != last_state)
+  {
+    int index = (last_state << 2) | state;
+    accumulator += encoder_transition_table[index];
+    last_state = state;
+
+    if (accumulator >= 4)
+    {
+      UIEvent evt = TURN_RIGHT;
+      xQueueSendFromISR(uiQueue, &evt, NULL);
+      accumulator = 0;
+    }
+    else if (accumulator <= -4)
+    {
+      UIEvent evt = TURN_LEFT;
+      xQueueSendFromISR(uiQueue, &evt, NULL);
+      accumulator = 0;
+    }
+  }
+}
+
+void uiInit()
+{
+  uiQueue = xQueueCreate(20, sizeof(UIEvent));
+  
   for (int i = 0; i < AVG_SAMPLES; i++)
   {
     touchSamples[i] = touchRead(TOUCH_PIN);
@@ -181,6 +238,8 @@ void initTouchSamples()
   for (int i = 0; i < AVG_SAMPLES; i++)
     sum += touchSamples[i];
   touchAverage = sum / AVG_SAMPLES;
+  attachInterrupt(digitalPinToInterrupt(KY040_CLK_PIN), encoderISR, CHANGE);
+  attachInterrupt(digitalPinToInterrupt(KY040_DT_PIN), encoderISR, CHANGE);
 }
 
 void processTouchInTask()
@@ -219,33 +278,6 @@ void processTouchInTask()
 
   // UIEvent evt = TOUCH;
   // xQueueSend(uiQueue, &evt, 0);
-}
-
-void IRAM_ATTR encoderISR()
-{
-  static int last_state = 0;
-  static int8_t accumulator = 0;
-
-  int state = (digitalRead(KY040_CLK_PIN) << 1) | digitalRead(KY040_DT_PIN);
-  if (state != last_state)
-  {
-    int index = (last_state << 2) | state;
-    accumulator += encoder_transition_table[index];
-    last_state = state;
-
-    if (accumulator >= 4)
-    {
-      UIEvent evt = TURN_RIGHT;
-      xQueueSendFromISR(uiQueue, &evt, NULL);
-      accumulator = 0;
-    }
-    else if (accumulator <= -4)
-    {
-      UIEvent evt = TURN_LEFT;
-      xQueueSendFromISR(uiQueue, &evt, NULL);
-      accumulator = 0;
-    }
-  }
 }
 
 void onScroll(bool r)
