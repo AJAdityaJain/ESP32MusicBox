@@ -14,7 +14,6 @@
 #define PLAYLIST_PAGE_SIZE 4
 #define SENSITIVITY 3
 
-extern volatile bool dirty;
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx;
 extern File activeFile;
 

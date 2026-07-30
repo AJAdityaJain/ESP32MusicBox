@@ -1,7 +1,10 @@
 #include "bt.h"
-bool is_connected_or_connecting = false;
-bool has_paired_addr = false;
-esp_bd_addr_t paired_addr = {0};
+
+volatile bool dirty = true;
+
+uint8_t connectionState = 0;
+esp_bd_addr_t bose_paired_addr = {0x28,0x11,0xA5,0x42,0x6D,0x88};
+esp_bd_addr_t paired_addr = {0x00,0x1B,0x66,0xD2,0x16,0x48};
 BluetoothA2DPSource a2dp_source;
 
 SemaphoreHandle_t pcmMutex = nullptr;
@@ -15,18 +18,18 @@ void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
     const char *names[] = {"DISCONNECTED", "CONNECTING", "CONNECTED", "DISCONNECTING"};
     Serial.printf("[BT] State: %s\n", names[state]);
 
-    if (state == ESP_A2D_CONNECTION_STATE_CONNECTED)
+    if (state == ESP_A2D_CONNECTION_STATE_CONNECTING)
     {
-        is_connected_or_connecting = true;
+        connectionState = 1;
     }
-    else if (state == ESP_A2D_CONNECTION_STATE_CONNECTING)
-    {
-        is_connected_or_connecting = true;
+    else if(state == ESP_A2D_CONNECTION_STATE_CONNECTED){
+        connectionState = 2;
     }
-    else
-    {
-        is_connected_or_connecting = false;
+    else{
+        connectionState = 0;
     }
+
+    dirty = true;
 }
 
 void onAudioStateChange(esp_a2d_audio_state_t state, void *ptr)
@@ -42,14 +45,15 @@ void btInit()
     pcmHead = 0;
     pcmTail = 0;
 
-    // has_paired_addr = loadBT(paired_addr);
 
+    a2dp_source.set_volume(100);
     a2dp_source.set_ssp_enabled(true);
     a2dp_source.set_on_connection_state_changed(onConnectionStateChange);
     a2dp_source.set_on_audio_state_changed(onAudioStateChange);
     a2dp_source.set_data_callback_in_frames(getDataFrames);
     esp_bt_dev_set_device_name(BT_DEVICE_NAME);
 
+    a2dp_source.set_auto_reconnect(paired_addr, 5);
     a2dp_source.start();
 }
 
@@ -72,12 +76,28 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
         xSemaphoreGive(pcmMutex);
     }
 }
+#define BEEP
 int32_t getDataFrames(Frame *frame, int32_t frame_count)
 {
     if (!isPlaying)
     {
-        memset(frame, 0, frame_count * sizeof(Frame));
-        return frame_count;
+        #ifdef BEEP
+            static float phase = 0.0f;
+            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
+            for (int i = 0; i < frame_count; i++)
+            {
+                int16_t s = (int16_t)(5000 * sinf(phase));
+                frame[i].channel1 = s;
+                frame[i].channel2 = s;
+                phase += increment;
+                if (phase > 2.0f * M_PI)
+                phase -= 2.0f * M_PI;
+            }
+            return frame_count;
+        #else
+            memset(frame, 0, frame_count * sizeof(Frame));
+            return frame_count;
+        #endif        
     }
 
     if (pcmMutex == nullptr)
@@ -109,7 +129,12 @@ int32_t getDataFrames(Frame *frame, int32_t frame_count)
     return frame_count;
 }
 
-void btAttempt()
+void btAttempt(int i)
 {
-    a2dp_source.connect_to(paired_addr);
+    a2dp_source.set_volume(100);
+
+     if (connectionState != 0) return;
+     
+    if(i == 2)a2dp_source.connect_to(bose_paired_addr);
+    else a2dp_source.connect_to(bose_paired_addr);
 }

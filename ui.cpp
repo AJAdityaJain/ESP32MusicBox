@@ -8,7 +8,6 @@ float touchAverage = 0;
 int touchTicks = 0;
 File activeFile;
 
-volatile bool dirty = false;
 
 QueueHandle_t uiQueue;
 
@@ -22,7 +21,6 @@ BaseScreen *activeScreen_ = &homeScreen_;
 
 void BaseScreen::onScroll(bool right)
 {
-  // cursorF += r ? 0.3 : -0.3;
   cursor_ = right ? (cursor_ + 1)
                   : (cursor_ - 1);
   if(cursor_ < 0) cursor_ = limit_-1;
@@ -99,12 +97,25 @@ void HomeScreen::onRender() {
 
 };
 
-BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
+BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*3;}
 void BTScreen::onTouch(){
-  btAttempt();
+  int option = (cursor_/SENSITIVITY);
+  if(option == 0) activeScreen_=&homeScreen_;
+  else{btAttempt(option);}
 }
 void BTScreen::onRender(){
-  
+  if(connectionState == 0){ctx.drawStr(1, 58,"X");}
+  else if (connectionState == 1){ctx.drawStr(1, 58,"...");}
+  else{ctx.drawStr(1, 58,"Connected");}
+
+
+    int option = (cursor_/SENSITIVITY);
+    if(option == 0)ctx.drawRFrame(0, 0, 128, 15, 2);
+    ctx.drawStr(1, 13, "Home");
+    if(option == 1)ctx.drawRFrame(0, 15, 128, 15, 2);
+    ctx.drawStr(1, 28, "HD 458BT");
+    if(option == 2)ctx.drawRFrame(0, 30, 128, 15, 2);
+    ctx.drawStr(1, 43, "Bose QT");
 }
 
 MusicScreen::MusicScreen() { cursor_ = 0; limit_=SENSITIVITY*4; }
@@ -291,9 +302,6 @@ void onTouch()
   activeScreen_->onTouch();
   dirty = true;
   return;
-  // else if(screenState == PLAYSCREEN){
-  //   isPlaying = !isPlaying;
-  // }
 }
 
 
@@ -303,24 +311,14 @@ void drawScreen()
   activeScreen_->onRender();
   ctx.sendBuffer();
   return;
-  // else if(screenState == PLAYSCREEN){
-  //   if(isPlaying){
-  //     ctx.drawStr(1, 13, "Playing");
-  //   }
-  //   else{
-  //     ctx.drawStr(1, 13, "Paused");
-  //   }
-  // }
-
 }
 
-// oled + all UI here
 void uiTask(void *pvParameters)
 {
   UIEvent evt;
   while (true)
   {
-    processTouchInTask(); // poll touch every loop
+    processTouchInTask(); 
 
     if (xQueueReceive(uiQueue, &evt, pdMS_TO_TICKS(50)))
     {

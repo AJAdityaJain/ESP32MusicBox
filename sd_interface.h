@@ -1,5 +1,6 @@
 #pragma once
 #include "SD.h"
+#include <nvs_flash.h>
 
 
 #define SD_CS_PIN       5
@@ -9,8 +10,7 @@
 #define ADDR_BIN        "/.lira/addr.bin"
 
 bool SDInit();
-// bool saveBT(const esp_bd_addr_t addr);
-// bool loadBT(esp_bd_addr_t addr);
+
 int fetchPlaylistsAfter(int startIndex, String names[], int maxFiles);
 int fetchPlaylistItems(String playlistName, uint16_t*& items);
 bool fetchMp3FromIndex(File& f, uint16_t index);

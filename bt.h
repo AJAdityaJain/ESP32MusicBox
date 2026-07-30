@@ -5,11 +5,12 @@
 
 #include "MP3DecoderHelix.h"
 
-#define SEARCH_NAME "Bose QC35 II AJ"
 #define BT_DEVICE_NAME "LIRA"
 #define PCM_BUF_SIZE (4096 * 2)
 
 
+extern uint8_t connectionState;
+extern volatile bool dirty;
 extern volatile int pcmHead;
 extern volatile int pcmTail;
 extern volatile bool isPlaying;
@@ -17,4 +18,4 @@ extern volatile bool isPlaying;
 int32_t getDataFrames(Frame *frame, int32_t frame_count);
 void btInit();
 void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *);
-void btAttempt();
+void btAttempt(int i);
