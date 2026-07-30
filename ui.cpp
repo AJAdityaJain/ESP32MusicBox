@@ -6,16 +6,15 @@ int sampleIndex = 0;
 bool samplesReady = false;
 float touchAverage = 0;
 int touchTicks = 0;
-File activeFile;
 
 
 QueueHandle_t uiQueue;
 
-HomeScreen homeScreen_ = HomeScreen();
-BTScreen btScreen_ = BTScreen();
-MusicScreen musicScreen_ = MusicScreen();
-PlaylistScreen playlistScreen_ = PlaylistScreen();
-MusicPlayerScreen playScreen_ = MusicPlayerScreen();
+HomeScreen homeScreen_;
+BTScreen btScreen_;
+MusicScreen musicScreen_;
+PlaylistScreen playlistScreen_;
+MusicPlayerScreen playScreen_;
 
 BaseScreen *activeScreen_ = &homeScreen_;
 
@@ -141,22 +140,10 @@ PlaylistScreen::PlaylistScreen() { cursor_ = 0; playlistCount_ == -1; offset_= 0
 void PlaylistScreen::onTouch() {
   activeScreen_ = &playScreen_;
   MusicPlayerScreen* casted = (MusicPlayerScreen*)activeScreen_;
+    if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > playlistCount_-1) return;
+  Serial.printf("Selected playlist: %s\n", playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str());
 
-  if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > playlistCount_-1) return;
-    Serial.printf("Selected playlist: %s\n", playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str());
-    // get selected playlist items
-    if(casted->playlistItems_ != nullptr){
-      free(casted->playlistItems_);
-      casted->playlistItems_ = nullptr;
-    }
-    casted->playlistSize_ = fetchPlaylistItems(playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str(),casted->playlistItems_);
-    if(casted->playlistSize_ == 0){
-      Serial.println("Failed to load playlist items");
-    }
-    //display all items in playlistItems on serial
-    for(int i=0;i<casted->playlistSize_;i++){
-      Serial.printf("Item %d: %d\n", i, casted->playlistItems_[i]);
-    }
+    casted->init(playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str());
 
 };
 void PlaylistScreen::onRender() {
@@ -193,9 +180,9 @@ void PlaylistScreen::onScroll(bool right)
   }
 }
 
-MusicPlayerScreen::MusicPlayerScreen(){cursor_ = 0; playlistSize_=0;}
+MusicPlayerScreen::MusicPlayerScreen(){cursor_ = 0; playlistSize=0;}
 void MusicPlayerScreen::onRender(){
-  if (isPlaying)
+  if (play)
   {
     ctx.drawStr(1, 28, "Playing");
   }
@@ -204,7 +191,58 @@ void MusicPlayerScreen::onRender(){
   }
 }
 void MusicPlayerScreen::onTouch(){
-  isPlaying =!isPlaying;
+  play =!play;
+}
+
+void MusicPlayerScreen::init(String name){
+  if(playlistItems != nullptr){
+    free(playlistItems);
+    playlistItems = nullptr;
+  }
+  playlistSize = fetchPlaylistItems(name,playlistItems);
+  playlistIndex = -1;
+
+  if(playlistSize == 0){
+    Serial.println("Failed to load playlist items");
+    return;
+    // activeScreen_ = &playlistScreen_;
+  }
+  next();
+}
+
+void MusicPlayerScreen::next(){
+  if(playlistSize == playlistIndex+1)return;
+  playlistIndex++;
+  fetchMp3FromIndex(activeFile,playlistItems[playlistIndex]);
+}
+void MusicPlayerScreen::tick(){
+  if (play && activeFile)
+  {
+    if (activeFile.available())
+    {
+      int available = (pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE;
+      if (available < PCM_BUF_SIZE * 3 / 4)
+      {
+        uint8_t chunk[512];
+        int n = activeFile.read(chunk, sizeof(chunk));
+        if (n > 0)
+          helix.write(chunk, n);
+      }
+    }
+    else
+    {
+      activeFile.close();
+      next();
+    }
+  }
+}
+
+void tick(){
+  playScreen_.tick();
+}
+
+bool isPlaying(){
+  return playScreen_.play;
 }
 
 void IRAM_ATTR encoderISR()
@@ -236,6 +274,13 @@ void IRAM_ATTR encoderISR()
 
 void uiInit()
 {
+  ctx.begin();
+  ctx.setDisplayRotation(U8G2_R2);
+  ctx.setFont(u8g2_font_ncenB08_tr);
+  ctx.drawStr(55, 45, "LIRA");
+  ctx.sendBuffer();
+
+
   uiQueue = xQueueCreate(20, sizeof(UIEvent));
   
   for (int i = 0; i < AVG_SAMPLES; i++)
@@ -304,7 +349,6 @@ void onTouch()
   return;
 }
 
-
 void drawScreen()
 {
   ctx.clearBuffer();
@@ -342,4 +386,9 @@ void uiTask(void *pvParameters)
       dirty = false;
     }
   }
+}
+
+void error(const char* str){
+  ctx.drawStr(1, 20, str);
+  ctx.sendBuffer();
 }

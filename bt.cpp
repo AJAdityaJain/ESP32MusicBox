@@ -1,5 +1,6 @@
 #include "bt.h"
 
+MP3DecoderHelix helix;
 volatile bool dirty = true;
 
 uint8_t connectionState = 0;
@@ -11,7 +12,26 @@ SemaphoreHandle_t pcmMutex = nullptr;
 int16_t pcmBuf[PCM_BUF_SIZE];
 volatile int pcmHead = 0;
 volatile int pcmTail = 0;
-volatile bool isPlaying = false;
+
+void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
+{
+    if (pcmMutex == nullptr)
+    {
+        pcmMutex = xSemaphoreCreateMutex();
+    }
+
+    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
+    {
+        for (size_t i = 0; i < len; i++)
+        {
+            int next = (pcmTail + 1) % PCM_BUF_SIZE;
+            if (next != pcmHead)
+                pcmBuf[pcmTail] = data[i], pcmTail = next;
+        }
+
+        xSemaphoreGive(pcmMutex);
+    }
+}
 
 void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
 {
@@ -36,8 +56,12 @@ void onAudioStateChange(esp_a2d_audio_state_t state, void *ptr)
 {
     Serial.printf("[BT] Audio : %s\n", state == ESP_A2D_AUDIO_STATE_STARTED ? "STARTED" : "STOPPED");
 }
+
 void btInit()
 {
+    helix.begin();
+    helix.setDataCallback(pcmCallback);
+
     if (pcmMutex == nullptr)
     {
         pcmMutex = xSemaphoreCreateMutex();
@@ -57,77 +81,6 @@ void btInit()
     a2dp_source.start();
 }
 
-void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
-{
-    if (pcmMutex == nullptr)
-    {
-        pcmMutex = xSemaphoreCreateMutex();
-    }
-
-    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
-    {
-        for (size_t i = 0; i < len; i++)
-        {
-            int next = (pcmTail + 1) % PCM_BUF_SIZE;
-            if (next != pcmHead)
-                pcmBuf[pcmTail] = data[i], pcmTail = next;
-        }
-
-        xSemaphoreGive(pcmMutex);
-    }
-}
-#define BEEP
-int32_t getDataFrames(Frame *frame, int32_t frame_count)
-{
-    if (!isPlaying)
-    {
-        #ifdef BEEP
-            static float phase = 0.0f;
-            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
-            for (int i = 0; i < frame_count; i++)
-            {
-                int16_t s = (int16_t)(5000 * sinf(phase));
-                frame[i].channel1 = s;
-                frame[i].channel2 = s;
-                phase += increment;
-                if (phase > 2.0f * M_PI)
-                phase -= 2.0f * M_PI;
-            }
-            return frame_count;
-        #else
-            memset(frame, 0, frame_count * sizeof(Frame));
-            return frame_count;
-        #endif        
-    }
-
-    if (pcmMutex == nullptr)
-    {
-        pcmMutex = xSemaphoreCreateMutex();
-    }
-
-    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
-    {
-        for (int i = 0; i < frame_count; i++)
-        {
-            static int16_t lastL = 0, lastR = 0;
-            if (pcmHead != pcmTail)
-            {
-                lastL = pcmBuf[pcmHead];
-                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
-            }
-            if (pcmHead != pcmTail)
-            {
-                lastR = pcmBuf[pcmHead];
-                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
-            }
-            frame[i].channel1 = lastL;
-            frame[i].channel2 = lastR;
-        }
-
-        xSemaphoreGive(pcmMutex);
-    }
-    return frame_count;
-}
 
 void btAttempt(int i)
 {

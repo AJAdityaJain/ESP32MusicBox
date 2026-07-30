@@ -15,7 +15,6 @@
 #define SENSITIVITY 3
 
 extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx;
-extern File activeFile;
 
 
 enum UIEvent
@@ -67,8 +66,14 @@ public:
   MusicPlayerScreen();
   void onTouch() override;
   void onRender() override;
-  uint16_t* playlistItems_;
-  int playlistSize_;
+  uint16_t* playlistItems;
+  volatile bool play = false;
+  int playlistSize;
+  int playlistIndex;
+  File activeFile;
+  void init(String name );
+  void tick();
+  void next();
 };
 
 class PlaylistScreen : public BaseScreen
@@ -95,3 +100,7 @@ static const int8_t encoder_transition_table[16] = {
 
 void uiTask(void *pvParameters);
 void uiInit();
+void tick();
+bool isPlaying();
+
+void error(const char* str);

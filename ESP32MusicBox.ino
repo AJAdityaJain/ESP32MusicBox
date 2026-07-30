@@ -1,67 +1,77 @@
 #include "ui.h"
 
-using namespace libhelix;
+#define BEEP
+int32_t getDataFrames(Frame *frame, int32_t frame_count)
+{
+    if (!isPlaying())
+    {
+        #ifdef BEEP
+            static float phase = 0.0f;
+            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
+            for (int i = 0; i < frame_count; i++)
+            {
+                int16_t s = (int16_t)(5000 * sinf(phase));
+                frame[i].channel1 = s;
+                frame[i].channel2 = s;
+                phase += increment;
+                if (phase > 2.0f * M_PI)
+                phase -= 2.0f * M_PI;
+            }
+            return frame_count;
+        #else
+            memset(frame, 0, frame_count * sizeof(Frame));
+            return frame_count;
+        #endif        
+    }
 
-MP3DecoderHelix helix;
+    if (pcmMutex == nullptr)
+    {
+        pcmMutex = xSemaphoreCreateMutex();
+    }
+
+    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
+    {
+        for (int i = 0; i < frame_count; i++)
+        {
+            static int16_t lastL = 0, lastR = 0;
+            if (pcmHead != pcmTail)
+            {
+                lastL = pcmBuf[pcmHead];
+                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
+            }
+            if (pcmHead != pcmTail)
+            {
+                lastR = pcmBuf[pcmHead];
+                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
+            }
+            frame[i].channel1 = lastL;
+            frame[i].channel2 = lastR;
+        }
+
+        xSemaphoreGive(pcmMutex);
+    }
+    return frame_count;
+}
 
 void setup()
 {
   delay(1000);
   Serial.begin(115200);
 
-  ctx.begin();
-  ctx.setDisplayRotation(U8G2_R2);
-  ctx.setFont(u8g2_font_ncenB08_tr);
-
-
+  uiInit();
   if (!SDInit())
   {
-    ctx.drawStr(1, 20, "memory card missing");
-    ctx.sendBuffer();
+    error("memory card missing");
     return;
   }
-  ctx.drawLine(1, 1, 1, 10);
-  ctx.sendBuffer();
-
-  
-  helix.begin();
-  helix.setDataCallback(pcmCallback);
-  ctx.drawLine(126, 52, 126, 62);
-  ctx.sendBuffer();
 
   btInit();
-
-  ctx.drawStr(55, 45, "LIRA");
-  ctx.sendBuffer();
-
-
-
-  uiInit();
 
   xTaskCreatePinnedToCore(uiTask, "ui", 4096, NULL, 1, NULL, 1);
 }
 
 void loop()
 {
-  if (isPlaying && activeFile)
-  {
-    if (activeFile.available())
-    {
-      int available = (pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE;
-      if (available < PCM_BUF_SIZE * 3 / 4)
-      {
-        uint8_t chunk[512];
-        int n = activeFile.read(chunk, sizeof(chunk));
-        if (n > 0)
-          helix.write(chunk, n);
-      }
-    }
-    else
-    {
-      isPlaying = false;
-      activeFile.close();
-      Serial.println("Done.");
-    }
-  }
+  tick();
   delay(10);
 }

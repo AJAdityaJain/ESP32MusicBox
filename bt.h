@@ -8,12 +8,16 @@
 #define BT_DEVICE_NAME "LIRA"
 #define PCM_BUF_SIZE (4096 * 2)
 
+using namespace libhelix;
 
+extern MP3DecoderHelix helix;
 extern uint8_t connectionState;
 extern volatile bool dirty;
+
+extern SemaphoreHandle_t pcmMutex;
+extern int16_t pcmBuf[PCM_BUF_SIZE];
 extern volatile int pcmHead;
 extern volatile int pcmTail;
-extern volatile bool isPlaying;
 
 int32_t getDataFrames(Frame *frame, int32_t frame_count);
 void btInit();
