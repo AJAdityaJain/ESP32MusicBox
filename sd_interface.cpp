@@ -41,15 +41,60 @@ int fetchPlaylistsAfter(int startIndex, String names[], int maxFiles)
     return found;
 }
 
+int fetchArtistsAfter(int startIndex, String names[], int maxFiles){
+
+    if (!SD.exists("/"))
+        return 0;
+    
+
+
+    File dir = SD.open("/");
+    if (!dir || !dir.isDirectory())
+        return 0;
+
+    int index = 0;
+    int found = 0;
+    File entry = dir.openNextFile();
+    while (entry && found < maxFiles)
+    {
+        if (entry.isDirectory())
+        {
+            String name = String(entry.name());
+            if (name.startsWith(".")){
+                entry.close();
+                entry = dir.openNextFile();
+                continue;
+            }
+
+            if (index >= startIndex)
+            {
+                names[found++] = name;
+            }
+            index++;
+        }
+        entry.close();
+        entry = dir.openNextFile();
+    }
+
+    dir.close();
+    return found;
+}
 
 int fetchPlaylistItems(String playlistName, uint16_t*& items){
 
-    String path = String(PLAYLISTS_DIR) + "/" + playlistName;
+    String path = "/" + playlistName;
     File f = SD.open(path, FILE_READ);
     if (!f)
         return 0;
 
-    int count = f.size() / sizeof(uint16_t);
+    size_t fileSize = f.size();
+    if (fileSize % 4 != 0)
+    {
+        f.close();
+        return 0;
+    }
+
+    int count = fileSize / 4;
     items = (uint16_t*)malloc(count * sizeof(uint16_t));
     if (!items)
     {
@@ -59,7 +104,20 @@ int fetchPlaylistItems(String playlistName, uint16_t*& items){
 
     for (int i = 0; i < count; i++)
     {
-        items[i] = f.read();
+        uint8_t bytes[4] = {0};
+        if (f.read(bytes, sizeof(bytes)) != sizeof(bytes))
+        {
+            free(items);
+            items = nullptr;
+            f.close();
+            return 0;
+        }
+
+        uint32_t value = ((uint32_t)bytes[0]) |
+                         ((uint32_t)bytes[1] << 8) |
+                         ((uint32_t)bytes[2] << 16) |
+                         ((uint32_t)bytes[3] << 24);
+        items[i] = (uint16_t)value;
     }
     f.close();
     return count;

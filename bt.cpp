@@ -31,6 +31,11 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
 
         xSemaphoreGive(pcmMutex);
     }
+
+    if (info.samprate > 0 && info.bitrate > 0)
+    {
+        updatePlaybackProgress(info.outputSamps, info.samprate, info.bitrate);
+    }
 }
 
 void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
@@ -70,7 +75,7 @@ void btInit()
     pcmTail = 0;
 
 
-    a2dp_source.set_volume(100);
+    a2dp_source.set_volume(128);
     a2dp_source.set_ssp_enabled(true);
     a2dp_source.set_on_connection_state_changed(onConnectionStateChange);
     a2dp_source.set_on_audio_state_changed(onAudioStateChange);
@@ -84,7 +89,7 @@ void btInit()
 
 void btAttempt(int i)
 {
-    a2dp_source.set_volume(100);
+    a2dp_source.set_volume(128);
 
      if (connectionState != 0) return;
      

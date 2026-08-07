@@ -6,6 +6,15 @@ int sampleIndex = 0;
 bool samplesReady = false;
 float touchAverage = 0;
 int touchTicks = 0;
+int doubleclick = 0;
+uint32_t clock_s = 0;
+bool updateSecond = false;
+
+inline void drawPlay(int x, int y,int d = 1){
+  for(int i =0; i < 8; i ++){
+    ctx.drawBox(x+(d*i*2),y+i,2,16-(2*i));
+  }
+}
 
 
 QueueHandle_t uiQueue;
@@ -13,10 +22,25 @@ QueueHandle_t uiQueue;
 HomeScreen homeScreen_;
 BTScreen btScreen_;
 MusicScreen musicScreen_;
-PlaylistScreen playlistScreen_;
+ListScreen playlistScreen_;
 MusicPlayerScreen playScreen_;
 
 BaseScreen *activeScreen_ = &homeScreen_;
+
+void resetPlaybackProgress()
+{
+  // playScreen_.resetProgress();
+}
+
+void updatePlaybackProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate)
+{
+  // playScreen_.updateProgress(samplesDecoded, sampleRate, bitrate);
+}
+
+void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate)
+{
+  // playScreen_.setPlaybackDuration(fileSize, sampleRate, bitrate);
+}
 
 void BaseScreen::onScroll(bool right)
 {
@@ -94,6 +118,10 @@ void HomeScreen::onRender() {
     ctx.drawLine(85,22,85,23);
     ctx.drawLine(95,22,95,23);
 
+
+    char buf[9];
+    snprintf(buf, sizeof(buf), "%02d:%02d", (clock_s/3600) % 24, (clock_s/60) % 60);
+    ctx.drawStr(80, 60, buf);
 };
 
 BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*3;}
@@ -121,7 +149,8 @@ MusicScreen::MusicScreen() { cursor_ = 0; limit_=SENSITIVITY*4; }
 void MusicScreen::onTouch() {
   int option = (cursor_/SENSITIVITY);
   if(option == 0) activeScreen_ = &homeScreen_;
-  if(option == 2) activeScreen_ = &playlistScreen_;
+  if(option == 2) {activeScreen_ = &playlistScreen_;playlistScreen_.init(0);}
+  if(option == 3) {activeScreen_ = &playlistScreen_;playlistScreen_.init(1);}
 };
 void MusicScreen::onRender() {
     int option = (cursor_/SENSITIVITY);
@@ -136,42 +165,58 @@ void MusicScreen::onRender() {
 
 };
 
-PlaylistScreen::PlaylistScreen() { cursor_ = 0; playlistCount_ == -1; offset_= 0;Serial.println(playlistCount_);}
-void PlaylistScreen::onTouch() {
+ListScreen::ListScreen() { cursor_ = 0; listCount_ = -1; offset_= 0;Serial.println(listCount_);}
+void ListScreen::onTouch() {
+  if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > listCount_-1) return;
   activeScreen_ = &playScreen_;
   MusicPlayerScreen* casted = (MusicPlayerScreen*)activeScreen_;
-    if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > playlistCount_-1) return;
-  Serial.printf("Selected playlist: %s\n", playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str());
-
-    casted->init(playlistNames_[cursor_-offset_*PLAYLIST_PAGE_SIZE].c_str());
+  String selectedItem = listItems_[cursor_-offset_*PLAYLIST_PAGE_SIZE];
+  if(mode == 0) selectedItem = "/.playlists/"+selectedItem;
+  else if(mode == 1) selectedItem = "/"+selectedItem + "/index.bin";
+  Serial.printf("Selected playlist: %s\n", selectedItem.c_str());
+  casted->init(selectedItem.c_str());
 
 };
-void PlaylistScreen::onRender() {
-    if (playlistCount_ == -1){
-      Serial.println("AAA\n");
-      playlistCount_ = fetchPlaylistsAfter(offset_*PLAYLIST_PAGE_SIZE, playlistNames_, PLAYLIST_PAGE_SIZE);
+
+void ListScreen::init(int m) {
+  mode = m;
+  offset_ = 0;
+  update();
+}
+void ListScreen::update() {
+  if (mode == 0) {
+    listCount_ = fetchPlaylistsAfter(offset_*PLAYLIST_PAGE_SIZE, listItems_, PLAYLIST_PAGE_SIZE);
+  } else if (mode == 1) {
+    listCount_ = fetchArtistsAfter(offset_*PLAYLIST_PAGE_SIZE, listItems_, PLAYLIST_PAGE_SIZE);
+  }
+}
+
+
+void ListScreen::onRender() {
+    if (listCount_ == -1){
+      update();
     }
     ctx.drawRFrame(0, 15*(cursor_-(offset_*PLAYLIST_PAGE_SIZE)), 128, 15, 2);
-    for(int i=0;i<playlistCount_;i++){
-      if(playlistNames_[i].length() > 0)ctx.drawStr(1, (i*15)+13, playlistNames_[i].c_str());
+    for(int i=0;i<listCount_;i++){
+      if(listItems_[i].length() > 0)ctx.drawStr(1, (i*15)+13, listItems_[i].c_str());
     }
 
 };
-void PlaylistScreen::onScroll(bool right)
+void ListScreen::onScroll(bool right)
 {
-  Serial.println(playlistCount_);
+  Serial.println(listCount_);
   cursor_ += right ? 1 : -1;
   if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) > PLAYLIST_PAGE_SIZE - 1)
   {
     offset_++;
-    playlistCount_ = -1;
+    listCount_ = -1;
   };
   if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) < 0)
   {
     if (offset_ > 0)
     {
       offset_--;
-      playlistCount_ = -1;
+      listCount_ = -1;
     }
     else
     {
@@ -181,16 +226,84 @@ void PlaylistScreen::onScroll(bool right)
 }
 
 MusicPlayerScreen::MusicPlayerScreen(){cursor_ = 0; playlistSize=0;}
+void MusicPlayerScreen::resetProgress(){
+  elapsedSamples_ = 0;
+  totalSamples_ = 0;
+  sampleRate_ = 0;
+  hasDuration_ = false;
+}
+void MusicPlayerScreen::setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate){
+  if (fileSize == 0 || sampleRate == 0 || bitrate == 0)
+  {
+    totalSamples_ = 0;
+    sampleRate_ = sampleRate;
+    hasDuration_ = false;
+    return;
+  }
+
+  sampleRate_ = sampleRate;
+  totalSamples_ = ((uint64_t)fileSize * 8ULL * sampleRate) / bitrate;
+  hasDuration_ = totalSamples_ > 0;
+}
+
+void MusicPlayerScreen::updateProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate){
+  elapsedSamples_ += samplesDecoded;
+  if (sampleRate > 0)
+  {
+    sampleRate_ = sampleRate;
+  }
+
+  if (activeFile.size() > 0 && sampleRate_ > 0 && bitrate > 0 && !hasDuration_)
+  {
+    setPlaybackDuration(activeFile.size(), sampleRate_, bitrate);
+  }
+  if(updateSecond)
+  {
+    updateSecond = false;
+    dirty = true;
+  }
+}
+String MusicPlayerScreen::formatTime(uint32_t seconds) const
+{
+  char buffer[16];
+  snprintf(buffer, sizeof(buffer), "%02d:%02d", seconds / 60, seconds % 60);
+  return String(buffer);
+}
 void MusicPlayerScreen::onRender(){
+  drawPlay(36,5,-1);
+    ctx.drawBox(21,5,2,16);
+    ctx.drawBox(107,5,2,16);
+    drawPlay(92,5);
+    ctx.drawStr(4, 36, songName.c_str());
+    ctx.drawStr(4, 47, artistName.c_str());
+
   if (play)
   {
-    ctx.drawStr(1, 28, "Playing");
+    ctx.drawBox(57,5,5,16);
+    ctx.drawBox(68,5,5,16);
   }
   else{
-    ctx.drawStr(1, 28, "paused");
+  drawPlay(57,5);
+  }
+
+  if (hasDuration_ && totalSamples_ > 0)
+  {
+    ctx.drawFrame(24, 54, 80, 6);
+    int fillWidth = (elapsedSamples_ * 78) / totalSamples_;
+    if (fillWidth > 78) fillWidth = 78;
+    if (fillWidth > 0)
+    {
+      ctx.drawBox(25, 55, fillWidth, 4);
+    }
+
+    String elapsedText = formatTime(elapsedSamples_ / sampleRate_);
+    String totalText = formatTime(totalSamples_ / sampleRate_);
+    ctx.drawStr(4, 60, elapsedText.c_str());
+    ctx.drawStr(96, 60, totalText.c_str());
   }
 }
 void MusicPlayerScreen::onTouch(){
+  Serial.println("MPS ON TOUCH");
   play =!play;
 }
 
@@ -199,13 +312,17 @@ void MusicPlayerScreen::init(String name){
     free(playlistItems);
     playlistItems = nullptr;
   }
+  resetProgress();
   playlistSize = fetchPlaylistItems(name,playlistItems);
   playlistIndex = -1;
 
   if(playlistSize == 0){
     Serial.println("Failed to load playlist items");
     return;
-    // activeScreen_ = &playlistScreen_;
+  }
+  for(int i = 0; i < playlistSize; i++)
+  {
+    Serial.printf("Playlist item %d: %d\n", i, playlistItems[i]);
   }
   next();
 }
@@ -213,7 +330,18 @@ void MusicPlayerScreen::init(String name){
 void MusicPlayerScreen::next(){
   if(playlistSize == playlistIndex+1)return;
   playlistIndex++;
-  fetchMp3FromIndex(activeFile,playlistItems[playlistIndex]);
+  Serial.printf("Playing next song: %d\n", playlistItems[playlistIndex]);
+  resetProgress();
+  if(fetchMp3FromIndex(activeFile,playlistItems[playlistIndex])){
+    String s = activeFile.path();
+    String path = s.substring(1); 
+    int slashIndex = path.indexOf('/');
+    String fileWithExt = path.substring(slashIndex + 1); 
+    
+    artistName = path.substring(0, slashIndex);
+    songName = fileWithExt.substring(0, fileWithExt.lastIndexOf('.'));
+  }
+  dirty = true;
 }
 void MusicPlayerScreen::tick(){
   if (play && activeFile)
@@ -236,6 +364,7 @@ void MusicPlayerScreen::tick(){
     }
   }
 }
+
 
 void tick(){
   playScreen_.tick();
@@ -312,14 +441,23 @@ void processTouchInTask()
     if (touchTicks <= TOUCH_TICKS_THRESHHOLD)
     {
       touchTicks++;
+      if(doubleclick >= 0 && doubleclick < DOUBLECLICK_THRESHOLD){
+        doubleclick++;
+      }
     }
   }
   else
   {
     if (touchTicks > 0 && touchTicks < TOUCH_TICKS_THRESHHOLD)
     {
-      UIEvent evt = TOUCH;
-      xQueueSend(uiQueue, &evt, 0);
+      if(doubleclick >0 && doubleclick < DOUBLECLICK_THRESHOLD){
+        UIEvent evt = TOUCH;
+        xQueueSend(uiQueue, &evt, 0);
+
+      }
+      else{
+        doubleclick = 0;
+      }
     }
     touchTicks = 0;
     // normal — update rolling average

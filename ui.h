@@ -11,10 +11,10 @@
 #define THRESHOLD 10
 #define AVG_SAMPLES 16
 #define TOUCH_TICKS_THRESHHOLD 15
+#define DOUBLECLICK_THRESHOLD 10
 #define PLAYLIST_PAGE_SIZE 4
 #define SENSITIVITY 3
 
-extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx;
 
 
 enum UIEvent
@@ -71,23 +71,37 @@ public:
   int playlistSize;
   int playlistIndex;
   File activeFile;
-  void init(String name );
+  String songName;
+  String artistName;
+  uint32_t elapsedSamples_ = 0;
+  uint32_t totalSamples_ = 0;
+  uint32_t sampleRate_ = 0;
+  bool hasDuration_ = false;
+  void init(String name);
   void tick();
   void next();
+  void resetProgress();
+  void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate);
+  void updateProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate);
+  String formatTime(uint32_t seconds) const;
 };
 
-class PlaylistScreen : public BaseScreen
+class ListScreen : public BaseScreen
 {
 public:
-  PlaylistScreen();
+  
+  ListScreen();
+  void init(int mode);
+  void update();
   void onScroll(bool right) override;
   void onTouch() override;
   void onRender() override;
 
 private:
+  int mode = 0; // 0: select playlist, 1: select artist
   int offset_;
-  int playlistCount_ =-1;
-  String playlistNames_[PLAYLIST_PAGE_SIZE];
+  int listCount_;
+  String listItems_[PLAYLIST_PAGE_SIZE];
 };
 
 // encoder
@@ -97,6 +111,8 @@ static const int8_t encoder_transition_table[16] = {
     1, 0, 0, -1,
     0, -1, 1, 0};
 
+extern bool updateSecond;
+extern uint32_t clock_s;
 
 void uiTask(void *pvParameters);
 void uiInit();
