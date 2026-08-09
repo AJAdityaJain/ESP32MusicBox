@@ -22,6 +22,7 @@ extern volatile int pcmTail;
 int32_t getDataFrames(Frame *frame, int32_t frame_count);
 void btInit();
 void btAttempt(int i);
+void setVolume(int v);
 void resetPlaybackProgress();
 void updatePlaybackProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate);
 void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate);

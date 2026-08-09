@@ -86,13 +86,14 @@ void btInit()
     a2dp_source.start();
 }
 
+void setVolume(int v){
+    a2dp_source.set_volume(v);
+}
 
 void btAttempt(int i)
 {
-    a2dp_source.set_volume(128);
-
-     if (connectionState != 0) return;
-     
+    setVolume(127);
+    if (connectionState != 0) return; 
     if(i == 2)a2dp_source.connect_to(bose_paired_addr);
     else a2dp_source.connect_to(bose_paired_addr);
 }

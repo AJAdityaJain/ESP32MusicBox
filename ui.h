@@ -66,10 +66,10 @@ public:
   MusicPlayerScreen();
   void onTouch() override;
   void onRender() override;
-  uint16_t* playlistItems;
+  uint16_t* playlistItems = nullptr;
   volatile bool play = false;
-  int playlistSize;
-  int playlistIndex;
+  int playlistSize = 0;
+  int playlistIndex = -1;
   File activeFile;
   String songName;
   String artistName;
@@ -80,6 +80,7 @@ public:
   void init(String name);
   void tick();
   void next();
+  void prev();
   void resetProgress();
   void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate);
   void updateProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate);

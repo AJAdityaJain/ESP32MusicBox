@@ -10,10 +10,33 @@ int doubleclick = 0;
 uint32_t clock_s = 0;
 bool updateSecond = false;
 
-inline void drawPlay(int x, int y,int d = 1){
-  for(int i =0; i < 8; i ++){
-    ctx.drawBox(x+(d*i*2),y+i,2,16-(2*i));
+inline void drawPlay(int x, int y,bool fwd){
+  if(fwd){
+    ctx.drawBox(x,y,1,11);
+    ctx.drawBox(x+1,y+1,2,9);
+    ctx.drawBox(x+3,y+2,2,7);
+    ctx.drawBox(x+5,y+3,2,5);
+    ctx.drawBox(x+7,y+4,2,3);
+    ctx.drawBox(x+9,y+5,1,1);
+  }else{
+    ctx.drawBox(x,y,1,11);
+    ctx.drawBox(x-2,y+1,2,9);
+    ctx.drawBox(x-4,y+2,2,7);
+    ctx.drawBox(x-6,y+3,2,5);
+    ctx.drawBox(x-8,y+4,2,3);
+    ctx.drawBox(x-9,y+5,1,1);
+
   }
+}
+
+inline void drawHome(int x, int y){
+  ctx.drawBox(x,y+4,9,1);
+  ctx.drawBox(x+1,y+3,7,1);
+  ctx.drawBox(x+2,y+2,5,1);
+  ctx.drawBox(x+3,y+1,3,1);
+  ctx.drawBox(x+4,y,1,1);
+  ctx.drawBox(x+4,y,1,1);
+  ctx.drawFrame(x+1,y+4,7,7);
 }
 
 
@@ -165,7 +188,7 @@ void MusicScreen::onRender() {
 
 };
 
-ListScreen::ListScreen() { cursor_ = 0; listCount_ = -1; offset_= 0;Serial.println(listCount_);}
+ListScreen::ListScreen() { cursor_ = 0; listCount_ = -1; offset_= 0;}
 void ListScreen::onTouch() {
   if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > listCount_-1) return;
   activeScreen_ = &playScreen_;
@@ -173,7 +196,6 @@ void ListScreen::onTouch() {
   String selectedItem = listItems_[cursor_-offset_*PLAYLIST_PAGE_SIZE];
   if(mode == 0) selectedItem = "/.playlists/"+selectedItem;
   else if(mode == 1) selectedItem = "/"+selectedItem + "/index.bin";
-  Serial.printf("Selected playlist: %s\n", selectedItem.c_str());
   casted->init(selectedItem.c_str());
 
 };
@@ -204,7 +226,6 @@ void ListScreen::onRender() {
 };
 void ListScreen::onScroll(bool right)
 {
-  Serial.println(listCount_);
   cursor_ += right ? 1 : -1;
   if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) > PLAYLIST_PAGE_SIZE - 1)
   {
@@ -225,7 +246,17 @@ void ListScreen::onScroll(bool right)
   }
 }
 
-MusicPlayerScreen::MusicPlayerScreen(){cursor_ = 0; playlistSize=0;}
+//constructors Does not run
+MusicPlayerScreen::MusicPlayerScreen()
+{
+  cursor_ = 0;
+  limit_ = 6;
+  playlistItems = nullptr;
+  playlistSize = 0;
+  playlistIndex = -1;
+  play = false;
+  resetProgress();
+}
 void MusicPlayerScreen::resetProgress(){
   elapsedSamples_ = 0;
   totalSamples_ = 0;
@@ -270,21 +301,49 @@ String MusicPlayerScreen::formatTime(uint32_t seconds) const
   return String(buffer);
 }
 void MusicPlayerScreen::onRender(){
-  drawPlay(36,5,-1);
-    ctx.drawBox(21,5,2,16);
-    ctx.drawBox(107,5,2,16);
-    drawPlay(92,5);
-    ctx.drawStr(4, 36, songName.c_str());
-    ctx.drawStr(4, 47, artistName.c_str());
+  //if option make box around 
+    int option = (cursor_/1);
 
+  if(option == 0) ctx.drawRFrame(1,0,13,13,2);
+  drawHome(3,1);
+
+  if(option == 1) ctx.drawRFrame(41,0,13,13,2);
+  drawPlay(51,1,false);
+  ctx.drawBox(42,1,1,11);
+
+  if(option == 2) ctx.drawRFrame(58,0,13,13,2);
   if (play)
   {
-    ctx.drawBox(57,5,5,16);
-    ctx.drawBox(68,5,5,16);
+    ctx.drawBox(59,1,3,11);
+    ctx.drawBox(65,1,3,11);
   }
-  else{
-  drawPlay(57,5);
-  }
+  else drawPlay(59,1,true);
+
+  if(option == 3) ctx.drawRFrame(74,0,13,13,2);
+  ctx.drawBox(84,1,1,11);
+  drawPlay(75,1,true);
+
+  if(option == 4)ctx.drawRFrame(101,0,13,13,2);
+
+  ctx.drawBox(103,4,2,5);
+  ctx.drawBox(105,3,1,7);
+  ctx.drawBox(106,2,1,9);
+  ctx.drawBox(107,1,2,11);
+  ctx.drawBox(111,3,1,6);
+  ctx.drawBox(111,3,1,6);
+  ctx.drawBox(110,2,1,1);
+  ctx.drawBox(110,9,1,1);
+
+
+  if(option == 5) ctx.drawRFrame(113,0,13,13,2);
+  ctx.drawRFrame(114,1,11,11,2);
+  ctx.drawBox(117,8,1,1);
+  ctx.drawBox(117,8,1,1);
+  ctx.drawBox(119,6,1,1);
+  ctx.drawBox(121,4,1,1);
+
+  ctx.drawStr(4, 36, songName.c_str());
+  ctx.drawStr(4, 47, artistName.c_str());
 
   if (hasDuration_ && totalSamples_ > 0)
   {
@@ -303,8 +362,27 @@ void MusicPlayerScreen::onRender(){
   }
 }
 void MusicPlayerScreen::onTouch(){
-  Serial.println("MPS ON TOUCH");
-  play =!play;
+  int option = (cursor_/1);
+
+  if(option == 0){
+    activeScreen_ = &homeScreen_;
+
+  }
+  else if(option == 1){
+    prev();
+  }
+  else if(option == 2){
+    play =!play;
+  }
+  else if(option == 3){
+    next();
+  }
+  else if(option == 4){
+    setVolume(127);
+  }
+  else if(option == 5){
+
+  }
 }
 
 void MusicPlayerScreen::init(String name){
@@ -317,7 +395,7 @@ void MusicPlayerScreen::init(String name){
   playlistIndex = -1;
 
   if(playlistSize == 0){
-    Serial.println("Failed to load playlist items");
+    error("Failed to load playlist items");
     return;
   }
   for(int i = 0; i < playlistSize; i++)
@@ -330,6 +408,22 @@ void MusicPlayerScreen::init(String name){
 void MusicPlayerScreen::next(){
   if(playlistSize == playlistIndex+1)return;
   playlistIndex++;
+  Serial.printf("Playing next song: %d\n", playlistItems[playlistIndex]);
+  resetProgress();
+  if(fetchMp3FromIndex(activeFile,playlistItems[playlistIndex])){
+    String s = activeFile.path();
+    String path = s.substring(1); 
+    int slashIndex = path.indexOf('/');
+    String fileWithExt = path.substring(slashIndex + 1); 
+    
+    artistName = path.substring(0, slashIndex);
+    songName = fileWithExt.substring(0, fileWithExt.lastIndexOf('.'));
+  }
+  dirty = true;
+}
+void MusicPlayerScreen::prev(){
+  if(0 == playlistIndex)return;
+  playlistIndex--;
   Serial.printf("Playing next song: %d\n", playlistItems[playlistIndex]);
   resetProgress();
   if(fetchMp3FromIndex(activeFile,playlistItems[playlistIndex])){
@@ -453,7 +547,8 @@ void processTouchInTask()
       if(doubleclick >0 && doubleclick < DOUBLECLICK_THRESHOLD){
         UIEvent evt = TOUCH;
         xQueueSend(uiQueue, &evt, 0);
-
+        Serial.println("Double click detected");
+        doubleclick = -1;
       }
       else{
         doubleclick = 0;

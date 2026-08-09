@@ -7,7 +7,8 @@ bool SDInit()
         nvs_flash_erase();
         nvs_flash_init();
     }
-    return SD.begin(SD_CS_PIN);
+    // Initialize SD with faster SPI speed for better data throughput
+    return SD.begin(SD_CS_PIN, SPI, 20000000);  // 20 MHz for reliable high-speed MP3 playback
 }
 
 
