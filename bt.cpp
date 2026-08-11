@@ -2,10 +2,14 @@
 
 MP3DecoderHelix helix;
 volatile bool dirty = true;
+esp_bd_addr_t boseAddr = {0x28,0x11,0xA5,0x42,0x6D,0x88};
+esp_bd_addr_t hdAddr = {0x00,0x1B,0x66,0xD2,0x16,0x48};
+esp_bd_addr_t earAddr = {0x02,0x1B,0x6f,0xf6,0x07,0xEB};
+esp_bd_addr_t* pairedAddr = nullptr;
+
 
 uint8_t connectionState = 0;
-esp_bd_addr_t bose_paired_addr = {0x28,0x11,0xA5,0x42,0x6D,0x88};
-esp_bd_addr_t paired_addr = {0x00,0x1B,0x66,0xD2,0x16,0x48};
+
 BluetoothA2DPSource a2dp_source;
 
 SemaphoreHandle_t pcmMutex = nullptr;
@@ -75,14 +79,14 @@ void btInit()
     pcmTail = 0;
 
 
-    a2dp_source.set_volume(128);
+    a2dp_source.set_volume(80);
     a2dp_source.set_ssp_enabled(true);
     a2dp_source.set_on_connection_state_changed(onConnectionStateChange);
     a2dp_source.set_on_audio_state_changed(onAudioStateChange);
     a2dp_source.set_data_callback_in_frames(getDataFrames);
     esp_bt_dev_set_device_name(BT_DEVICE_NAME);
 
-    a2dp_source.set_auto_reconnect(paired_addr, 5);
+    updateDevice(&boseAddr);
     a2dp_source.start();
 }
 
@@ -90,10 +94,19 @@ void setVolume(int v){
     a2dp_source.set_volume(v);
 }
 
-void btAttempt(int i)
+void updateDevice(esp_bd_addr_t* addr){
+    pairedAddr = addr;
+    a2dp_source.set_auto_reconnect(*pairedAddr, 5);
+}
+void btAttempt(esp_bd_addr_t* addr)
 {
     setVolume(127);
-    if (connectionState != 0) return; 
-    if(i == 2)a2dp_source.connect_to(bose_paired_addr);
-    else a2dp_source.connect_to(bose_paired_addr);
+    if(addr == nullptr)
+    {
+        return;
+    }
+    if(pairedAddr != addr){
+        updateDevice(addr);
+    }
+    a2dp_source.connect_to(*pairedAddr);
 }

@@ -10,6 +10,11 @@
 
 using namespace libhelix;
 
+extern esp_bd_addr_t boseAddr;
+extern esp_bd_addr_t hdAddr;
+extern esp_bd_addr_t earAddr;
+extern esp_bd_addr_t* pairedAddr;
+
 extern MP3DecoderHelix helix;
 extern uint8_t connectionState;
 extern volatile bool dirty;
@@ -21,7 +26,8 @@ extern volatile int pcmTail;
 
 int32_t getDataFrames(Frame *frame, int32_t frame_count);
 void btInit();
-void btAttempt(int i);
+void btAttempt(esp_bd_addr_t* addr);
+void updateDevice(esp_bd_addr_t* addr);
 void setVolume(int v);
 void resetPlaybackProgress();
 void updatePlaybackProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate);

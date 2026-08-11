@@ -64,12 +64,15 @@ class MusicPlayerScreen : public BaseScreen
 {
 public:
   MusicPlayerScreen();
+  void onScroll(bool right) override;
   void onTouch() override;
   void onRender() override;
   uint16_t* playlistItems = nullptr;
   volatile bool play = false;
   int playlistSize = 0;
   int playlistIndex = -1;
+  bool volumeMode = false;
+  int volumeLevel = 80;
   File activeFile;
   String songName;
   String artistName;

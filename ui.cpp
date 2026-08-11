@@ -52,17 +52,17 @@ BaseScreen *activeScreen_ = &homeScreen_;
 
 void resetPlaybackProgress()
 {
-  // playScreen_.resetProgress();
+  playScreen_.resetProgress();
 }
 
 void updatePlaybackProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate)
 {
-  // playScreen_.updateProgress(samplesDecoded, sampleRate, bitrate);
+  playScreen_.updateProgress(samplesDecoded, sampleRate, bitrate);
 }
 
 void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate)
 {
-  // playScreen_.setPlaybackDuration(fileSize, sampleRate, bitrate);
+  playScreen_.setPlaybackDuration(fileSize, sampleRate, bitrate);
 }
 
 void BaseScreen::onScroll(bool right)
@@ -147,11 +147,11 @@ void HomeScreen::onRender() {
     ctx.drawStr(80, 60, buf);
 };
 
-BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*3;}
+BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
 void BTScreen::onTouch(){
   int option = (cursor_/SENSITIVITY);
   if(option == 0) activeScreen_=&homeScreen_;
-  else{btAttempt(option);}
+  else{btAttempt(option ==1?&hdAddr:option == 2?&boseAddr:option == 3?&earAddr:nullptr);}
 }
 void BTScreen::onRender(){
   if(connectionState == 0){ctx.drawStr(1, 58,"X");}
@@ -162,10 +162,9 @@ void BTScreen::onRender(){
     int option = (cursor_/SENSITIVITY);
     if(option == 0)ctx.drawRFrame(0, 0, 128, 15, 2);
     ctx.drawStr(1, 13, "Home");
-    if(option == 1)ctx.drawRFrame(0, 15, 128, 15, 2);
-    ctx.drawStr(1, 28, "HD 458BT");
-    if(option == 2)ctx.drawRFrame(0, 30, 128, 15, 2);
-    ctx.drawStr(1, 43, "Bose QT");
+
+    if(option != 0)ctx.drawRFrame(0, 15, 128, 15, 2);
+    ctx.drawStr(1, 28, option == 1? "HD 458BT":option == 2? "Bose QC35":option == 3? "Jack":"???");
 }
 
 MusicScreen::MusicScreen() { cursor_ = 0; limit_=SENSITIVITY*4; }
@@ -257,6 +256,20 @@ MusicPlayerScreen::MusicPlayerScreen()
   play = false;
   resetProgress();
 }
+
+void MusicPlayerScreen::onScroll (bool right)
+{
+  if(!volumeMode){
+    BaseScreen::onScroll(right);
+  }
+  else{
+    volumeLevel += right ? 5 : -5;
+    if(volumeLevel < 0) volumeLevel = 0;
+    if(volumeLevel > 127) volumeLevel = 127;
+    setVolume(volumeLevel);
+  }
+}
+
 void MusicPlayerScreen::resetProgress(){
   elapsedSamples_ = 0;
   totalSamples_ = 0;
@@ -344,18 +357,22 @@ void MusicPlayerScreen::onRender(){
 
   ctx.drawStr(4, 36, songName.c_str());
   ctx.drawStr(4, 47, artistName.c_str());
+  if(volumeMode){
+    ctx.drawBox(0,0, volumeLevel, 4);
+  }
 
   if (hasDuration_ && totalSamples_ > 0)
   {
+    int e = elapsedSamples_ / 2;//double channel
     ctx.drawFrame(24, 54, 80, 6);
-    int fillWidth = (elapsedSamples_ * 78) / totalSamples_;
+    int fillWidth = (e * 78) / totalSamples_;
     if (fillWidth > 78) fillWidth = 78;
     if (fillWidth > 0)
     {
       ctx.drawBox(25, 55, fillWidth, 4);
     }
 
-    String elapsedText = formatTime(elapsedSamples_ / sampleRate_);
+    String elapsedText = formatTime(e / sampleRate_);
     String totalText = formatTime(totalSamples_ / sampleRate_);
     ctx.drawStr(4, 60, elapsedText.c_str());
     ctx.drawStr(96, 60, totalText.c_str());
@@ -378,7 +395,7 @@ void MusicPlayerScreen::onTouch(){
     next();
   }
   else if(option == 4){
-    setVolume(127);
+    volumeMode = !volumeMode;
   }
   else if(option == 5){
 
@@ -498,6 +515,7 @@ void IRAM_ATTR encoderISR()
 void uiInit()
 {
   ctx.begin();
+  ctx.setContrast(20);
   ctx.setDisplayRotation(U8G2_R2);
   ctx.setFont(u8g2_font_ncenB08_tr);
   ctx.drawStr(55, 45, "LIRA");
