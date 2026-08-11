@@ -1,63 +1,11 @@
 #include "ui.h"
 
-#define BEEP
-int32_t getDataFrames(Frame *frame, int32_t frame_count)
-{
-    if (!isPlaying())
-    {
-        #ifdef BEEP
-            static float phase = 0.0f;
-            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
-            for (int i = 0; i < frame_count; i++)
-            {
-                int16_t s = (int16_t)(5000 * sinf(phase));
-                frame[i].channel1 = s;
-                frame[i].channel2 = s;
-                phase += increment;
-                if (phase > 2.0f * M_PI)
-                phase -= 2.0f * M_PI;
-            }
-            return frame_count;
-        #else
-            memset(frame, 0, frame_count * sizeof(Frame));
-            return frame_count;
-        #endif        
-    }
-
-    if (pcmMutex == nullptr)
-    {
-        pcmMutex = xSemaphoreCreateMutex();
-    }
-
-    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
-    {
-        for (int i = 0; i < frame_count; i++)
-        {
-            static int16_t lastL = 0, lastR = 0;
-            if (pcmHead != pcmTail)
-            {
-                lastL = pcmBuf[pcmHead];
-                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
-            }
-            if (pcmHead != pcmTail)
-            {
-                lastR = pcmBuf[pcmHead];
-                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
-            }
-            frame[i].channel1 = lastL;
-            frame[i].channel2 = lastR;
-        }
-
-        xSemaphoreGive(pcmMutex);
-    }
-    return frame_count;
-}
-
 void setup()
 {
   delay(1000);
   Serial.begin(115200);
-
+  pinMode(4, OUTPUT);
+  digitalWrite(4, LOW); 
   uiInit();
   if (!SDInit())
   {
@@ -87,6 +35,6 @@ void loop()
     lastTick = now;
     updateSecond = true;
   }
-  tick();
-  delay(10);
+  readOntoBuffer();
+  delay(5);
 }

@@ -153,6 +153,9 @@ void BTScreen::onTouch(){
   int option = (cursor_/SENSITIVITY);
   if(option == 0) activeScreen_=&homeScreen_;
   else{btAttempt(option ==1?&hdAddr:option == 2?&boseAddr:option == 3?&earAddr:nullptr);}
+
+  if(option == 3){digitalWrite(4, HIGH);}
+  else{digitalWrite(4, LOW);}
 }
 void BTScreen::onRender(){
   if(connectionState == 0){ctx.drawStr(1, 58,"X");}
@@ -325,7 +328,7 @@ void MusicPlayerScreen::onRender(){
   drawPlay(51,1,false);
   ctx.drawBox(42,1,1,11);
 
-  if(option == 2) ctx.drawRFrame(58,0,13,13,2);
+  if(option == 2) ctx.drawRFrame(57,0,13,13,2);
   if (play)
   {
     ctx.drawBox(59,1,3,11);
@@ -359,7 +362,7 @@ void MusicPlayerScreen::onRender(){
   ctx.drawStr(4, 36, songName.c_str());
   ctx.drawStr(4, 47, artistName.c_str());
   if(volumeMode){
-    ctx.drawBox(0,0, volumeLevel, 2);
+    ctx.drawBox(0,0, volumeLevel, 1);
   }
 
   if (hasDuration_ && totalSamples_ > 0)
@@ -455,35 +458,79 @@ void MusicPlayerScreen::prev(){
   }
   dirty = true;
 }
-void MusicPlayerScreen::tick(){
-  if (play && activeFile)
+
+int32_t getDataFrames(Frame *frame, int32_t frame_count)
+{
+    if (!playScreen_.play)
+    {
+        #ifdef BEEP
+            static float phase = 0.0f;
+            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
+            for (int i = 0; i < frame_count; i++)
+            {
+                int16_t s = (int16_t)(5000 * sinf(phase));
+                frame[i].channel1 = s;
+                frame[i].channel2 = s;
+                phase += increment;
+                if (phase > 2.0f * M_PI)
+                phase -= 2.0f * M_PI;
+            }
+            return frame_count;
+        #else
+            memset(frame, 0, frame_count * sizeof(Frame));
+            return frame_count;
+        #endif        
+    }
+
+    if (pcmMutex == nullptr)
+    {
+        pcmMutex = xSemaphoreCreateMutex();
+    }
+
+    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
+    {
+        for (int i = 0; i < frame_count; i++)
+        {
+            static int16_t lastL = 0, lastR = 0;
+            if (pcmHead != pcmTail)
+            {
+                lastL = pcmBuf[pcmHead];
+                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
+            }
+            if (pcmHead != pcmTail)
+            {
+                lastR = pcmBuf[pcmHead];
+                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
+            }
+            frame[i].channel1 = lastL;
+            frame[i].channel2 = lastR;
+        }
+
+        xSemaphoreGive(pcmMutex);
+    }
+    return frame_count;
+}
+
+void readOntoBuffer(){
+  if (playScreen_.play && playScreen_.activeFile)
   {
-    if (activeFile.available())
+    if (playScreen_.activeFile.available())
     {
       int available = (pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE;
       if (available < PCM_BUF_SIZE * 3 / 4)
       {
         uint8_t chunk[512];
-        int n = activeFile.read(chunk, sizeof(chunk));
+        int n = playScreen_.activeFile.read(chunk, sizeof(chunk));
         if (n > 0)
           helix.write(chunk, n);
       }
     }
     else
     {
-      activeFile.close();
-      next();
+      playScreen_.activeFile.close();
+      playScreen_.next();
     }
   }
-}
-
-
-void tick(){
-  playScreen_.tick();
-}
-
-bool isPlaying(){
-  return playScreen_.play;
 }
 
 void IRAM_ATTR encoderISR()
@@ -586,29 +633,6 @@ void processTouchInTask()
     touchAverage = sum / AVG_SAMPLES;
   }
 
-  // UIEvent evt = TOUCH;
-  // xQueueSend(uiQueue, &evt, 0);
-}
-
-void onScroll(bool r)
-{
-  activeScreen_->onScroll(r);
-  dirty = true;
-}
-
-void onTouch()
-{
-  activeScreen_->onTouch();
-  dirty = true;
-  return;
-}
-
-void drawScreen()
-{
-  ctx.clearBuffer();
-  activeScreen_->onRender();
-  ctx.sendBuffer();
-  return;
 }
 
 void uiTask(void *pvParameters)
@@ -620,29 +644,24 @@ void uiTask(void *pvParameters)
 
     if (xQueueReceive(uiQueue, &evt, pdMS_TO_TICKS(50)))
     {
-      switch (evt)
-      {
-      case TURN_LEFT:
-        onScroll(false);
-        break;
-      case TURN_RIGHT:
-        onScroll(true);
-        break;
-      case TOUCH:
-        onTouch();
-        break;
+      switch (evt) {
+        case TURN_LEFT:  activeScreen_->onScroll(false); break;
+        case TURN_RIGHT: activeScreen_->onScroll(true);  break;
+        case TOUCH:      activeScreen_->onTouch();       break;
       }
+      dirty = true;
     }
 
     if (dirty)
     {
+      dirty = false;
       if(updateSleep == 2){        
         ctx.setPowerSave(1);
+      } else {
+        ctx.clearBuffer();
+        activeScreen_->onRender();
+        ctx.sendBuffer();
       }
-      else{
-        drawScreen();
-      }
-      dirty = false;
     }
   }
 }

@@ -14,7 +14,7 @@
 #define DOUBLECLICK_THRESHOLD 10
 #define PLAYLIST_PAGE_SIZE 4
 #define SENSITIVITY 3
-
+#define BEEP
 
 
 enum UIEvent
@@ -81,7 +81,6 @@ public:
   uint32_t sampleRate_ = 0;
   bool hasDuration_ = false;
   void init(String name);
-  void tick();
   void next();
   void prev();
   void resetProgress();
@@ -121,7 +120,5 @@ extern uint32_t clock_s;
 
 void uiTask(void *pvParameters);
 void uiInit();
-void tick();
-bool isPlaying();
-
+void readOntoBuffer();
 void error(const char* str);
