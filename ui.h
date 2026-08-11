@@ -116,6 +116,7 @@ static const int8_t encoder_transition_table[16] = {
     0, -1, 1, 0};
 
 extern bool updateSecond;
+extern uint8_t updateSleep;
 extern uint32_t clock_s;
 
 void uiTask(void *pvParameters);

@@ -9,6 +9,7 @@ int touchTicks = 0;
 int doubleclick = 0;
 uint32_t clock_s = 0;
 bool updateSecond = false;
+uint8_t updateSleep = 0;
 
 inline void drawPlay(int x, int y,bool fwd){
   if(fwd){
@@ -358,7 +359,7 @@ void MusicPlayerScreen::onRender(){
   ctx.drawStr(4, 36, songName.c_str());
   ctx.drawStr(4, 47, artistName.c_str());
   if(volumeMode){
-    ctx.drawBox(0,0, volumeLevel, 4);
+    ctx.drawBox(0,0, volumeLevel, 2);
   }
 
   if (hasDuration_ && totalSamples_ > 0)
@@ -515,7 +516,7 @@ void IRAM_ATTR encoderISR()
 void uiInit()
 {
   ctx.begin();
-  ctx.setContrast(20);
+  ctx.setContrast(1);
   ctx.setDisplayRotation(U8G2_R2);
   ctx.setFont(u8g2_font_ncenB08_tr);
   ctx.drawStr(55, 45, "LIRA");
@@ -552,6 +553,8 @@ void processTouchInTask()
   {
     if (touchTicks <= TOUCH_TICKS_THRESHHOLD)
     {
+      if(updateSleep == 2) ctx.setPowerSave(0);
+      updateSleep = 0;
       touchTicks++;
       if(doubleclick >= 0 && doubleclick < DOUBLECLICK_THRESHOLD){
         doubleclick++;
@@ -633,12 +636,16 @@ void uiTask(void *pvParameters)
 
     if (dirty)
     {
-      drawScreen();
+      if(updateSleep == 2){        
+        ctx.setPowerSave(1);
+      }
+      else{
+        drawScreen();
+      }
       dirty = false;
     }
   }
 }
-
 void error(const char* str){
   ctx.drawStr(1, 20, str);
   ctx.sendBuffer();

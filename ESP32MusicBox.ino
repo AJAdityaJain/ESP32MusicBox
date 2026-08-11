@@ -80,6 +80,8 @@ void loop()
     clock_s++;
     if(clock_s % 60 == 0)
     {
+        if(updateSleep == 1){updateSleep = 2;}
+        if(updateSleep == 0)updateSleep = 1;
       dirty = true;
     }
     lastTick = now;
