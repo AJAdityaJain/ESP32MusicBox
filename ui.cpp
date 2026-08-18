@@ -1,13 +1,6 @@
 #include "ui.h"
 
 U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx(U8G2_R0, U8X8_PIN_NONE);
-uint16_t touchSamples[AVG_SAMPLES];
-int sampleIndex = 0;
-bool samplesReady = false;
-float touchAverage = 0;
-int touchTicks = 0;
-int doubleclick = 0;
-uint32_t clock_s = 0;
 bool updateSecond = false;
 uint8_t updateSleep = 0;
 
@@ -42,6 +35,7 @@ inline void drawHome(int x, int y){
 
 
 QueueHandle_t uiQueue;
+TouchManager touchManager;
 
 HomeScreen homeScreen_;
 BTScreen btScreen_;
@@ -71,10 +65,10 @@ void BaseScreen::onScroll(bool right)
   cursor_ = right ? (cursor_ + 1)
                   : (cursor_ - 1);
   if(cursor_ < 0) cursor_ = limit_-1;
-  if(cursor_ > limit_) cursor_ = 0;
+  if(cursor_ >= limit_) cursor_ = 0;
 }
 
-HomeScreen::HomeScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
+HomeScreen::HomeScreen() { cursor_ = 0; limit_ = SENSITIVITY*5;}
 void HomeScreen::onTouch() {
     int option = (cursor_/SENSITIVITY);
     if(option == 0) {activeScreen_ = &musicScreen_;}
@@ -130,7 +124,7 @@ void HomeScreen::onRender() {
 
     // music
     if(option == 3)ctx.drawRFrame(52, 8, 20, 20, 2);
-    ctx.drawRFrame(55, 10, 13, 16, 5);
+    drawPlay(58, 13, true);
 
     if(option == 0)ctx.drawRFrame(77, 8, 20, 20, 2);
 
@@ -144,10 +138,12 @@ void HomeScreen::onRender() {
     ctx.drawLine(85,22,85,23);
     ctx.drawLine(95,22,95,23);
 
+    //Cross
+  if(option == 4)ctx.drawRFrame(102-50,25+ 8, 20, 20, 2);
 
-    char buf[9];
-    snprintf(buf, sizeof(buf), "%02d:%02d", (clock_s/3600) % 24, (clock_s/60) % 60);
-    ctx.drawStr(80, 60, buf);
+  ctx.drawLine(103+3-50, 9+3+25,103+18-6-50,9+18-6+25);
+  ctx.drawLine(103+18-6-50, 9+3+25,103+3-50,9+18-6+25);
+
 };
 
 BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
@@ -196,6 +192,7 @@ void MusicScreen::onRender() {
 
 ListScreen::ListScreen() { cursor_ = 0; listCount_ = -1; offset_= 0;}
 void ListScreen::onTouch() {
+  if(cursor_ == -1) {activeScreen_ = &homeScreen_;return;}
   if(cursor_ < 0 || cursor_-offset_*PLAYLIST_PAGE_SIZE > listCount_-1) return;
   if(mode == 0 || mode == 1){
     activeScreen_ = &playScreen_;
@@ -209,6 +206,8 @@ void ListScreen::onTouch() {
     mode = 3;
     artist = listItems_[cursor_-offset_*PLAYLIST_PAGE_SIZE];
     listCount_ = -1;
+    offset_ = 0;
+    cursor_ = 0;
   }
   else if(mode == 3){
     activeScreen_ = &playScreen_;
@@ -244,6 +243,12 @@ void ListScreen::onRender() {
     for(int i=0;i<listCount_;i++){
       if(listItems_[i].length() > 0)ctx.drawStr(1, (i*15)+13, listItems_[i].c_str());
     }
+    if(offset_ == 0){
+      if(cursor_ == -1){
+        ctx.drawRFrame(117, 0, 12, 12, 2);
+      }; 
+      drawHome(118, 1);
+    }
 
 };
 void ListScreen::onScroll(bool right)
@@ -254,7 +259,7 @@ void ListScreen::onScroll(bool right)
     offset_++;
     listCount_ = -1;
   };
-  if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) < 0)
+  if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) < -1)
   {
     if (offset_ > 0)
     {
@@ -263,12 +268,11 @@ void ListScreen::onScroll(bool right)
     }
     else
     {
-      cursor_ = 0;
+      cursor_ = -1;
     }
   }
 }
 
-//constructors Does not run
 MusicPlayerScreen::MusicPlayerScreen()
 {
   cursor_ = 0;
@@ -382,18 +386,18 @@ void MusicPlayerScreen::onRender(){
     ctx.drawBox(0,0, volumeLevel, 1);
   }
 
-  ctx.setCursor(100, 36);
+  ctx.setCursor(90, 48);
   ctx.printf("[%d/%d]", playlistIndex + 1, playlistItems.size());
 
   if (hasDuration_ && totalSamples_ > 0)
   {
     int e = elapsedSamples_ / 2;//double channel
-    ctx.drawFrame(24, 54, 80, 6);
-    int fillWidth = (e * 78) / totalSamples_;
-    if (fillWidth > 78) fillWidth = 78;
+    ctx.drawFrame(28, 54, 72, 6);
+    int fillWidth = (e * 70) / totalSamples_;
+    if (fillWidth > 70) fillWidth = 70;
     if (fillWidth > 0)
     {
-      ctx.drawBox(25, 55, fillWidth, 4);
+      ctx.drawBox(29, 55, fillWidth, 4);
     }
 
     String elapsedText = formatTime(e / sampleRate_);
@@ -422,7 +426,8 @@ void MusicPlayerScreen::onTouch(){
     volumeMode = !volumeMode;
   }
   else if(option == 5){
-
+    playlistItems.shuffle();
+    resetProgress();    
   }
 }
 
@@ -590,74 +595,19 @@ void uiInit()
 
 
   uiQueue = xQueueCreate(20, sizeof(UIEvent));
-  
-  for (int i = 0; i < AVG_SAMPLES; i++)
-  {
-    touchSamples[i] = touchRead(TOUCH_PIN);
-    delay(5);
-  }
-  samplesReady = true;
-  // calculate initial average
-  float sum = 0;
-  for (int i = 0; i < AVG_SAMPLES; i++)
-    sum += touchSamples[i];
-  touchAverage = sum / AVG_SAMPLES;
+  touchManager.begin();
+
   attachInterrupt(digitalPinToInterrupt(KY040_CLK_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(KY040_DT_PIN), encoderISR, CHANGE);
 }
 
-void processTouchInTask()
-{
-  uint16_t val = touchRead(TOUCH_PIN);
-
-  if (!samplesReady)
-    return;
-
-
-  if (touchAverage - val >= THRESHOLD)
-  {
-    if (touchTicks <= TOUCH_TICKS_THRESHHOLD)
-    {
-      if(updateSleep == 2) ctx.setPowerSave(0);
-      updateSleep = 0;
-      touchTicks++;
-      if(doubleclick >= 0 && doubleclick < DOUBLECLICK_THRESHOLD){
-        doubleclick++;
-      }
-    }
-  }
-  else
-  {
-    if (touchTicks > 0 && touchTicks < TOUCH_TICKS_THRESHHOLD)
-    {
-      if(doubleclick >0 && doubleclick < DOUBLECLICK_THRESHOLD){
-        UIEvent evt = TOUCH;
-        xQueueSend(uiQueue, &evt, 0);
-        doubleclick = -1;
-      }
-      else{
-        doubleclick = 0;
-      }
-    }
-    touchTicks = 0;
-    // normal — update rolling average
-    touchSamples[sampleIndex] = val;
-    sampleIndex = (sampleIndex + 1) % AVG_SAMPLES;
-
-    float sum = 0;
-    for (int i = 0; i < AVG_SAMPLES; i++)
-      sum += touchSamples[i];
-    touchAverage = sum / AVG_SAMPLES;
-  }
-
-}
 
 void uiTask(void *pvParameters)
 {
   UIEvent evt;
   while (true)
   {
-    processTouchInTask(); 
+    touchManager.processTouchInTask();
 
     if (xQueueReceive(uiQueue, &evt, pdMS_TO_TICKS(50)))
     {

@@ -7,7 +7,7 @@
 
 #define BT_DEVICE_NAME "LIRA"
 #define PCM_BUF_SIZE (4096 * 2)
-#define LOG
+// #define LOG
 using namespace libhelix;
 
 extern esp_bd_addr_t boseAddr;

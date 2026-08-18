@@ -7,7 +7,6 @@ bool SDInit()
         nvs_flash_erase();
         nvs_flash_init();
     }
-    // Initialize SD with faster SPI speed for better data throughput
     return SD.begin(SD_CS_PIN, SPI, 25000000);  // 25MHz
 }
 

@@ -37,6 +37,15 @@ public:
         Serial.printf("Pushed value: %u, new size: %zu\n", value, size_);
     }
 
+    void shuffle() {
+        for (size_t i = 0; i < size_; ++i) {
+            size_t j = random(0, size_);
+            uint16_t temp = data_[i];
+            data_[i] = data_[j];
+            data_[j] = temp;
+        }
+    }
+
     void clear() {
         Serial.println("Clearing vector");
         size_ = 0;

@@ -16,12 +16,85 @@
 #define SENSITIVITY 3
 #define BEEP
 
+extern bool updateSecond;
+extern uint8_t updateSleep;
+extern QueueHandle_t uiQueue;
+extern U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx;
 
 enum UIEvent
 {
   TURN_LEFT,
   TURN_RIGHT,
   TOUCH
+};
+
+class TouchManager {
+private:
+  uint16_t touchSamples[AVG_SAMPLES] = {0};
+  int sampleIndex = 0;
+  bool samplesReady = false;
+  float touchAverage = 0.0f;
+  int touchTicks = 0;
+  int doubleclick = 0;
+
+public:
+  void begin() {
+    for (int i = 0; i < AVG_SAMPLES; ++i) {
+      touchSamples[i] = touchRead(TOUCH_PIN);
+      delay(5);
+    }
+
+    sampleIndex = 0;
+    samplesReady = true;
+
+    float sum = 0.0f;
+    for (int i = 0; i < AVG_SAMPLES; ++i) {
+      sum += touchSamples[i];
+    }
+    touchAverage = sum / AVG_SAMPLES;
+  }
+
+  void processTouchInTask() {
+    if (!samplesReady) {
+      return;
+    }
+
+    const uint16_t val = touchRead(TOUCH_PIN);
+
+    if (touchAverage - val >= THRESHOLD) {
+      if (touchTicks <= TOUCH_TICKS_THRESHHOLD) {
+        if (updateSleep == 2) {
+          ctx.setPowerSave(0);
+        }
+        updateSleep = 0;
+        touchTicks++;
+        if (doubleclick >= 0 && doubleclick < DOUBLECLICK_THRESHOLD) {
+          doubleclick++;
+        }
+      }
+      return;
+    }
+
+    if (touchTicks > 0 && touchTicks < TOUCH_TICKS_THRESHHOLD) {
+      if (doubleclick > 0 && doubleclick < DOUBLECLICK_THRESHOLD) {
+        const UIEvent evt = TOUCH;
+        xQueueSend(uiQueue, &evt, 0);
+        doubleclick = -1;
+      } else {
+        doubleclick = 0;
+      }
+    }
+
+    touchTicks = 0;
+    touchSamples[sampleIndex] = val;
+    sampleIndex = (sampleIndex + 1) % AVG_SAMPLES;
+
+    float sum = 0.0f;
+    for (int i = 0; i < AVG_SAMPLES; ++i) {
+      sum += touchSamples[i];
+    }
+    touchAverage = sum / AVG_SAMPLES;
+  }
 };
 
 class BaseScreen
@@ -112,17 +185,12 @@ private:
   int listCount_;
   String listItems_[PLAYLIST_PAGE_SIZE];
 };
-
-// encoder
 static const int8_t encoder_transition_table[16] = {
     0, 1, -1, 0,
     -1, 0, 0, 1,
     1, 0, 0, -1,
     0, -1, 1, 0};
 
-extern bool updateSecond;
-extern uint8_t updateSleep;
-extern uint32_t clock_s;
 
 void uiTask(void *pvParameters);
 void uiInit();
