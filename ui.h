@@ -8,10 +8,10 @@
 #define KY040_CLK_PIN 34
 #define KY040_DT_PIN 32
 #define TOUCH_PIN 12
-#define THRESHOLD 10
+#define THRESHOLD 15
 #define AVG_SAMPLES 16
 #define TOUCH_TICKS_THRESHHOLD 15
-#define DOUBLECLICK_THRESHOLD 10
+#define DOUBLECLICK_THRESHOLD 5
 #define PLAYLIST_PAGE_SIZE 4
 #define SENSITIVITY 3
 #define BEEP
@@ -67,26 +67,30 @@ public:
   void onScroll(bool right) override;
   void onTouch() override;
   void onRender() override;
-  uint16_t* playlistItems = nullptr;
+
+  File activeFile;
   volatile bool play = false;
-  int playlistSize = 0;
+  void next();
+  void prev();
+  void queue(String path);
+  void queue(uint16_t index);
+  void resetProgress();
+  void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate);
+  void updateProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate);
+  void emptyQueue();
+
+  private:
   int playlistIndex = -1;
   bool volumeMode = false;
   int volumeLevel = 80;
-  File activeFile;
   String songName;
   String artistName;
   uint32_t elapsedSamples_ = 0;
   uint32_t totalSamples_ = 0;
   uint32_t sampleRate_ = 0;
   bool hasDuration_ = false;
-  void init(String name);
-  void next();
-  void prev();
-  void resetProgress();
-  void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate);
-  void updateProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32_t bitrate);
   String formatTime(uint32_t seconds) const;
+  uint16_tVec playlistItems;  
 };
 
 class ListScreen : public BaseScreen
@@ -101,7 +105,9 @@ public:
   void onRender() override;
 
 private:
-  int mode = 0; // 0: select playlist, 1: select artist
+  int mode = 0; // 0: select playlist, 1: select artist, 2: browse, 3: browse an artist
+
+  String artist;
   int offset_;
   int listCount_;
   String listItems_[PLAYLIST_PAGE_SIZE];

@@ -36,5 +36,5 @@ void loop()
     updateSecond = true;
   }
   readOntoBuffer();
-  delay(5);
+  delay(1);
 }

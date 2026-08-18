@@ -8,7 +8,7 @@ bool SDInit()
         nvs_flash_init();
     }
     // Initialize SD with faster SPI speed for better data throughput
-    return SD.begin(SD_CS_PIN, SPI, 30000000);  // 20 MHz for reliable high-speed MP3 playback
+    return SD.begin(SD_CS_PIN, SPI, 25000000);  // 25MHz
 }
 
 
@@ -61,7 +61,7 @@ int fetchArtistsAfter(int startIndex, String names[], int maxFiles){
         if (entry.isDirectory())
         {
             String name = String(entry.name());
-            if (name.startsWith(".")){
+            if (name.startsWith(".") || name.startsWith("Sys")){
                 entry.close();
                 entry = dir.openNextFile();
                 continue;
@@ -81,59 +81,85 @@ int fetchArtistsAfter(int startIndex, String names[], int maxFiles){
     return found;
 }
 
-int fetchPlaylistItems(String playlistName, uint16_t*& items){
-
-    String path = "/" + playlistName;
-    File f = SD.open(path, FILE_READ);
-    if (!f)
+int fetchSongsAfter(String artistName, int startIndex, String names[], int maxFiles)
+{
+    String indexPath = "/" + artistName + "/index.bin";
+    if (!SD.exists(indexPath))
         return 0;
 
-    size_t fileSize = f.size();
-    if (fileSize % 4 != 0)
-    {
-        f.close();
-        return 0;
-    }
-
-    int count = fileSize / 4;
-    items = (uint16_t*)malloc(count * sizeof(uint16_t));
-    if (!items)
-    {
-        f.close();
-        return 0;
-    }
-
-    for (int i = 0; i < count; i++)
+    File f = SD.open(indexPath, FILE_READ);
+    if (!f)        return 0;
+    
+    f.seek(startIndex * 4);
+    int found = 0;
+    while (found < maxFiles && f.available())
     {
         uint8_t bytes[4] = {0};
         if (f.read(bytes, sizeof(bytes)) != sizeof(bytes))
         {
-            free(items);
-            items = nullptr;
             f.close();
-            return 0;
+            return found;
         }
 
         uint32_t value = ((uint32_t)bytes[0]) |
                          ((uint32_t)bytes[1] << 8) |
                          ((uint32_t)bytes[2] << 16) |
                          ((uint32_t)bytes[3] << 24);
-        items[i] = (uint16_t)value;
+
+        String songPath = getMp3AddrFromIndex((uint16_t)value);
+        if (!songPath.isEmpty())
+        {
+            int slashIndex = songPath.lastIndexOf('/');
+            String fileName = songPath.substring(slashIndex + 1);
+            names[found++] = fileName;
+        }
     }
+
+    
     f.close();
-    return count;
+    return found;
 }
 
-bool fetchMp3FromIndex(File& f, uint16_t index)
-{
-    if (f)
+void queueItems(String path, uint16_tVec& items){
+
+    File f = SD.open(path, FILE_READ);
+    if (!f)return;
+
+    size_t fileSize = f.size();
+    if (fileSize % 4 != 0)
     {
         f.close();
+        return;
     }
 
+    int count = fileSize / 4;
+    items.reserve(count);
+
+    for (int i = 0; i < count; i++)
+    {
+        uint8_t bytes[4] = {0};
+        if (f.read(bytes, sizeof(bytes)) != sizeof(bytes))
+        {
+            items.clear();
+            f.close();
+            return;
+        }
+
+        uint32_t value = ((uint32_t)bytes[0]) |
+                         ((uint32_t)bytes[1] << 8) |
+                         ((uint32_t)bytes[2] << 16) |
+                         ((uint32_t)bytes[3] << 24);
+        items.push((uint16_t)value);
+        // items[i] = (uint16_t)value;
+    }
+    f.close();
+}
+
+String getMp3AddrFromIndex(uint16_t index)
+{
+
     File indexFile = SD.open(INDEX_BIN, FILE_READ);
-    if (!indexFile)
-        return false;
+    if (!indexFile)return String();
 
     indexFile.seek(index * 8);
 
@@ -141,7 +167,7 @@ bool fetchMp3FromIndex(File& f, uint16_t index)
     if (indexFile.read(record, sizeof(record)) != sizeof(record))
     {
         indexFile.close();
-        return false;
+        return String();
     }
     indexFile.close();
 
@@ -152,12 +178,12 @@ bool fetchMp3FromIndex(File& f, uint16_t index)
 
     File addrFile = SD.open(ADDR_BIN, FILE_READ);
     if (!addrFile)
-        return false;
+        return String();
 
     if (!addrFile.seek(addrOffset))
     {
         addrFile.close();
-        return false;
+        return String();
     }
 
     String line;
@@ -175,12 +201,41 @@ bool fetchMp3FromIndex(File& f, uint16_t index)
     }
     addrFile.close();
 
-    if (line.length() == 0)
-        return false;
 
     if (!line.startsWith("/"))
-        return false;
+        return String();
+    return line;
+}
 
-    f = SD.open(line + ".mp3", FILE_READ);
+uint16_t getIndexFrom(String artistName, int songIndex)
+{
+    String indexPath = "/" + artistName + "/index.bin";
+    if (!SD.exists(indexPath))
+        return 0;
+
+    File f = SD.open(indexPath, FILE_READ);
+    if (!f)        return 0;
+
+    f.seek(songIndex * 4);
+    uint8_t bytes[4] = {0};
+    if (f.read(bytes, sizeof(bytes)) != sizeof(bytes))
+    {
+        f.close();
+        return 0;
+    }
+
+    uint32_t value = ((uint32_t)bytes[0]) |
+                     ((uint32_t)bytes[1] << 8) |
+                     ((uint32_t)bytes[2] << 16) |
+                     ((uint32_t)bytes[3] << 24);
+
+    f.close();
+    return (uint16_t)value;
+}
+
+bool fetchMp3FromIndex(File& f, uint16_t index)
+{
+    if (f)f.close();
+    f = SD.open((getMp3AddrFromIndex(index) + ".mp3"), FILE_READ);
     return (bool)f;
 }

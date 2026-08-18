@@ -19,18 +19,29 @@ volatile int pcmTail = 0;
 
 void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
 {
+    static int16_t dcOffset = 0;
     if (pcmMutex == nullptr)
     {
         pcmMutex = xSemaphoreCreateMutex();
     }
 
-    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
+    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, pdMS_TO_TICKS(5)) == pdTRUE)
     {
         for (size_t i = 0; i < len; i++)
         {
+            dcOffset += (data[i] - dcOffset) >> 8;
+            int16_t filtered = data[i] - dcOffset;
+
             int next = (pcmTail + 1) % PCM_BUF_SIZE;
-            if (next != pcmHead)
-                pcmBuf[pcmTail] = data[i], pcmTail = next;
+            while (next == pcmHead) {
+                xSemaphoreGive(pcmMutex);
+                vTaskDelay(pdMS_TO_TICKS(1));
+                xSemaphoreTake(pcmMutex, pdMS_TO_TICKS(5));
+                next = (pcmTail + 1) % PCM_BUF_SIZE;
+            }
+
+            pcmBuf[pcmTail] = filtered;
+            pcmTail = next;
         }
 
         xSemaphoreGive(pcmMutex);
@@ -38,6 +49,9 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
 
     if (info.samprate > 0 && info.bitrate > 0)
     {
+        #ifdef LOG
+        Serial.println(((pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE) / (PCM_BUF_SIZE * 1.0f));
+        #endif
         updatePlaybackProgress(info.outputSamps, info.samprate, info.bitrate);
     }
 }
@@ -45,7 +59,6 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
 void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
 {
     const char *names[] = {"DISCONNECTED", "CONNECTING", "CONNECTED", "DISCONNECTING"};
-    Serial.printf("[BT] State: %s\n", names[state]);
 
     if (state == ESP_A2D_CONNECTION_STATE_CONNECTING)
     {
@@ -61,10 +74,6 @@ void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
     dirty = true;
 }
 
-void onAudioStateChange(esp_a2d_audio_state_t state, void *ptr)
-{
-    Serial.printf("[BT] Audio : %s\n", state == ESP_A2D_AUDIO_STATE_STARTED ? "STARTED" : "STOPPED");
-}
 
 void btInit()
 {
@@ -82,7 +91,6 @@ void btInit()
     a2dp_source.set_volume(80);
     a2dp_source.set_ssp_enabled(true);
     a2dp_source.set_on_connection_state_changed(onConnectionStateChange);
-    a2dp_source.set_on_audio_state_changed(onAudioStateChange);
     a2dp_source.set_data_callback_in_frames(getDataFrames);
     esp_bt_dev_set_device_name(BT_DEVICE_NAME);
 
