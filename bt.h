@@ -4,6 +4,7 @@
 #include "BluetoothA2DPSource.h"
 
 #include "MP3DecoderHelix.h"
+#include "buzzer.h"
 
 #define BT_DEVICE_NAME "LIRA"
 #define PCM_BUF_SIZE (4096 * 2)

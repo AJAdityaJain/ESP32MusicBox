@@ -14,7 +14,7 @@
 #define DOUBLECLICK_THRESHOLD 5
 #define PLAYLIST_PAGE_SIZE 4
 #define SENSITIVITY 3
-#define BEEP
+// #define BEEP
 
 extern bool updateSecond;
 extern uint8_t updateSleep;

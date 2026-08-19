@@ -29,9 +29,6 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
     {
         for (size_t i = 0; i < len; i++)
         {
-            dcOffset += (data[i] - dcOffset) >> 8;
-            int16_t filtered = data[i] - dcOffset;
-
             int next = (pcmTail + 1) % PCM_BUF_SIZE;
             while (next == pcmHead) {
                 xSemaphoreGive(pcmMutex);
@@ -40,7 +37,7 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
                 next = (pcmTail + 1) % PCM_BUF_SIZE;
             }
 
-            pcmBuf[pcmTail] = filtered;
+            pcmBuf[pcmTail] = data[i];
             pcmTail = next;
         }
 
@@ -59,6 +56,8 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
 void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
 {
     const char *names[] = {"DISCONNECTED", "CONNECTING", "CONNECTED", "DISCONNECTING"};
+
+    Serial.println(names[state]);
 
     if (state == ESP_A2D_CONNECTION_STATE_CONNECTING)
     {
@@ -88,13 +87,20 @@ void btInit()
     pcmTail = 0;
 
 
+    a2dp_source.set_local_name(BT_DEVICE_NAME);
+    esp_bt_cod_t cod;
+    cod.major = ESP_BT_COD_MAJOR_DEV_AV;
+    cod.minor = 0x04; // portable audio
+    cod.service = ESP_BT_COD_SRVC_AUDIO | ESP_BT_COD_SRVC_RENDERING;
+    esp_bt_gap_set_cod(cod, ESP_BT_INIT_COD);
+    esp_bt_dev_set_device_name("iPhone"); // yes literally
+
     a2dp_source.set_volume(80);
     a2dp_source.set_ssp_enabled(true);
     a2dp_source.set_on_connection_state_changed(onConnectionStateChange);
     a2dp_source.set_data_callback_in_frames(getDataFrames);
-    esp_bt_dev_set_device_name(BT_DEVICE_NAME);
 
-    updateDevice(&boseAddr);
+    updateDevice(&hdAddr);
     a2dp_source.start();
 }
 

@@ -74,6 +74,7 @@ void HomeScreen::onTouch() {
     if(option == 0) {activeScreen_ = &musicScreen_;}
     if(option == 1){activeScreen_ = &btScreen_;}
     if(option == 3){activeScreen_ = &playScreen_;}
+    if(option == 4){playScreen_.emptyQueue();}
     
 };
 void HomeScreen::onRender() {
@@ -147,13 +148,21 @@ void HomeScreen::onRender() {
 };
 
 BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
+
+static bool jack = false;
 void BTScreen::onTouch(){
   int option = (cursor_/SENSITIVITY);
+  if(option == 3 && !jack){
+    jack = true;
+    digitalWrite(4, HIGH);
+  }
+  if(option ==1 || option ==2) {
+    jack = false;
+    digitalWrite(4, LOW);
+  }
   if(option == 0) activeScreen_=&homeScreen_;
   else{btAttempt(option ==1?&hdAddr:option == 2?&boseAddr:option == 3?&earAddr:nullptr);}
 
-  if(option == 3){digitalWrite(4, HIGH);}
-  else{digitalWrite(4, LOW);}
 }
 void BTScreen::onRender(){
   if(connectionState == 0){ctx.drawStr(1, 58,"X");}
@@ -259,7 +268,7 @@ void ListScreen::onScroll(bool right)
     offset_++;
     listCount_ = -1;
   };
-  if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) < -1)
+  if (cursor_ - (offset_ * PLAYLIST_PAGE_SIZE) < 0)
   {
     if (offset_ > 0)
     {
@@ -427,7 +436,8 @@ void MusicPlayerScreen::onTouch(){
   }
   else if(option == 5){
     playlistItems.shuffle();
-    resetProgress();    
+    if(playlistIndex >= 0)playlistIndex--;
+    next();
   }
 }
 

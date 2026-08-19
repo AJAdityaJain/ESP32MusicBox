@@ -1,5 +1,14 @@
 #include "ui.h"
 
+#define BUZZER_PIN 15
+void playNotes(int* notes, int count) {
+    for (int i = 0; i < count; i++) {
+        tone(BUZZER_PIN, notes[i*2], notes[i*2+1]);
+        delay(notes[i*2+1] + 10);
+    }
+    noTone(BUZZER_PIN);
+}
+
 void setup()
 {
   Serial.begin(115200);
