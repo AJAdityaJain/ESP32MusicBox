@@ -91,21 +91,35 @@
 #define NOTE_D8 4699
 #define NOTE_DS8 4978
 
-int connectingNotes[] = {NOTE_E5, 50};
+int connectingNotes[] = {50,NOTE_E5};
 
-int connectedNotes[] = {NOTE_C5,100, NOTE_E5,100, NOTE_G5,100, NOTE_C6, 200};
+int connectedNotes[] = {100,NOTE_C5, 100, NOTE_E5,100, NOTE_G5,200, NOTE_C6};
 
-int disconnectedNotes[] = {NOTE_G5,100, NOTE_E5,100, NOTE_C5, 100,  NOTE_A4,200};
+int disconnectedNotes[] = {100,NOTE_G5,100, NOTE_E5,  100,NOTE_C5,  200,NOTE_A4};
+
+int* notes = disconnectedNotes;
+uint32_t notesTick = 0;
+uint32_t notesIndex = -1;
+uint32_t notesSize = 0;
 
 
 void playConnected() {
-    playNotes(connectedNotes,4);
+    notes = connectedNotes;
+    notesTick = notes[0];
+    notesSize = 4;
+    notesIndex = 0;
 }
 
 void playConnecting() {
-    playNotes(connectingNotes,1);
+    notes = connectingNotes;
+    notesTick = notes[0];
+    notesSize = 1;
+    notesIndex = 0;
 }
 
 void playDisconnected() {
-    playNotes(disconnectedNotes,4);
+    notes = disconnectedNotes;
+    notesTick = notes[0];
+    notesSize = 4;
+    notesIndex = 0;
 }

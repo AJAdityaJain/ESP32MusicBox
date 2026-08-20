@@ -1,6 +1,4 @@
 #include "esp_bt.h"
-#include <math.h>
-#include "SPI.h"
 #include "BluetoothA2DPSource.h"
 
 #include "MP3DecoderHelix.h"
@@ -9,24 +7,25 @@
 #define BT_DEVICE_NAME "LIRA"
 #define PCM_BUF_SIZE (4096 * 2)
 // #define LOG
-using namespace libhelix;
 
 extern esp_bd_addr_t boseAddr;
 extern esp_bd_addr_t hdAddr;
 extern esp_bd_addr_t earAddr;
 extern esp_bd_addr_t* pairedAddr;
 
-extern MP3DecoderHelix helix;
-extern uint8_t connectionState;
-extern volatile bool dirty;
-
-extern SemaphoreHandle_t pcmMutex;
-extern int16_t pcmBuf[PCM_BUF_SIZE];
-extern volatile int pcmHead;
-extern volatile int pcmTail;
 
 int32_t getDataFrames(Frame *frame, int32_t frame_count);
+
+void assignNext(void (*fn)());
+void assignPlay(bool (*fn)());
+void assignFileClose(void (*fn)());
+void assignFileAvailable(bool (*fn)());
+void assignFileRead(int (*fn)(uint8_t*, size_t));
+void assignFileOpen(bool (*fn)());
+
 void btInit();
+void readOntoBuffer();
+void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr);
 void btAttempt(esp_bd_addr_t* addr);
 void updateDevice(esp_bd_addr_t* addr);
 void setVolume(int v);

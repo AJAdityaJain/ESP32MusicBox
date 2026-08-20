@@ -1,12 +1,21 @@
 #include "ui.h"
 
 #define BUZZER_PIN 15
-void playNotes(int* notes, int count) {
-    for (int i = 0; i < count; i++) {
-        tone(BUZZER_PIN, notes[i*2], notes[i*2+1]);
-        delay(notes[i*2+1] + 10);
-    }
-    noTone(BUZZER_PIN);
+#define LEDC_CHANNEL 0
+#define LEDC_TIMER LEDC_TIMER_0
+#define LEDC_RESOLUTION 8
+
+void buzzerTone(int freq, int duration) {
+    ledcAttach(BUZZER_PIN, freq, LEDC_RESOLUTION);
+    ledcWrite(BUZZER_PIN, 128);
+    delay(duration);
+    ledcWrite(BUZZER_PIN, 0);
+    ledcDetach(BUZZER_PIN);
+}
+
+void buzzerStop() {
+    ledcWrite(BUZZER_PIN, 0);
+    ledcDetach(BUZZER_PIN);
 }
 
 void setup()
@@ -36,23 +45,38 @@ void setup()
   xTaskCreatePinnedToCore(uiTask, "ui", 4096, NULL, 1, NULL, 0);
 }
 
-uint32_t lastTick = 0;
+uint32_t last_s = 0;
+uint32_t last_note = 0;
 uint32_t now = millis();
 int clock_s = 0;
 void loop()
 {
   now = millis();
-  if(now - lastTick >= 1000)
+  if(now - last_s >= 1000)
   {
-    lastTick = now;
+    last_s = now;
     clock_s++;
     if(clock_s % 15 == 0)
     {
         if(updateSleep == 1)updateSleep = 2;
         if(updateSleep == 0)updateSleep = 1;
     }
-    updateSecond = true;
+    dirty = true;
   }
+  if(notesSize){
+    if(now-last_note  >= notesTick){
+      last_note = now;
+      buzzerTone(notes[notesIndex*2+1], notes[notesIndex*2]);
+      notesIndex ++;       
+      if(notesIndex == notesSize){
+        notesSize = 0;
+        buzzerStop();
+      }else{
+        notesTick = notes[notesIndex*2];
+      }
+    }
+  }
+
   readOntoBuffer();
   delay(1);
 }

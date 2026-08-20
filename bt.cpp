@@ -1,21 +1,47 @@
 #include "bt.h"
+using namespace libhelix;
 
 MP3DecoderHelix helix;
-volatile bool dirty = true;
 esp_bd_addr_t boseAddr = {0x28,0x11,0xA5,0x42,0x6D,0x88};
 esp_bd_addr_t hdAddr = {0x00,0x1B,0x66,0xD2,0x16,0x48};
 esp_bd_addr_t earAddr = {0x02,0x1B,0x6f,0xf6,0x07,0xEB};
 esp_bd_addr_t* pairedAddr = nullptr;
 
 
-uint8_t connectionState = 0;
 
-BluetoothA2DPSource a2dp_source;
+static BluetoothA2DPSource a2dp_source;
 
-SemaphoreHandle_t pcmMutex = nullptr;
-int16_t pcmBuf[PCM_BUF_SIZE];
-volatile int pcmHead = 0;
-volatile int pcmTail = 0;
+static SemaphoreHandle_t pcmMutex = nullptr;
+static int16_t pcmBuf[PCM_BUF_SIZE];
+static volatile int pcmHead = 0;
+static volatile int pcmTail = 0;
+
+static void (*playNext)();
+static bool (*available)();
+static void (*fileClose)();
+static bool (*isPlaying)();
+static int (*readFile)(uint8_t*, size_t);
+static bool (*fileOpen)();
+
+void assignNext(void (*fn)()){
+    playNext = fn;
+}
+void assignPlay(bool (*fn)()){
+    isPlaying = fn;
+}
+void assignFileClose(void (*fn)()){
+    fileClose = fn;
+}
+void assignFileAvailable(bool (*fn)()){
+    available = fn;
+}
+void assignFileRead(int (*fn)(uint8_t*, size_t)){
+    readFile = fn;
+}
+void assignFileOpen(bool (*fn)()){
+    fileOpen = fn;
+}
+
 
 void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
 {
@@ -53,26 +79,79 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
     }
 }
 
-void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
+int32_t getDataFrames(Frame *frame, int32_t frame_count)
 {
-    const char *names[] = {"DISCONNECTED", "CONNECTING", "CONNECTED", "DISCONNECTING"};
-
-    Serial.println(names[state]);
-
-    if (state == ESP_A2D_CONNECTION_STATE_CONNECTING)
+    if (!isPlaying())
     {
-        connectionState = 1;
-    }
-    else if(state == ESP_A2D_CONNECTION_STATE_CONNECTED){
-        connectionState = 2;
-    }
-    else{
-        connectionState = 0;
+        #ifdef BEEP
+            static float phase = 0.0f;
+            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
+            for (int i = 0; i < frame_count; i++)
+            {
+                int16_t s = (int16_t)(5000 * sinf(phase));
+                frame[i].channel1 = s;
+                frame[i].channel2 = s;
+                phase += increment;
+                if (phase > 2.0f * M_PI)
+                phase -= 2.0f * M_PI;
+            }
+            return frame_count;
+        #else
+            memset(frame, 0, frame_count * sizeof(Frame));
+            return frame_count;
+        #endif        
     }
 
-    dirty = true;
+    if (pcmMutex == nullptr)
+    {
+        pcmMutex = xSemaphoreCreateMutex();
+    }
+
+    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
+    {
+        for (int i = 0; i < frame_count; i++)
+        {
+            static int16_t lastL = 0, lastR = 0;
+            if (pcmHead != pcmTail)
+            {
+                lastL = pcmBuf[pcmHead];
+                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
+            }
+            if (pcmHead != pcmTail)
+            {
+                lastR = pcmBuf[pcmHead];
+                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
+            }
+            frame[i].channel1 = lastL;
+            frame[i].channel2 = lastR;
+        }
+
+        xSemaphoreGive(pcmMutex);
+    }
+    return frame_count;
 }
 
+void readOntoBuffer(){
+    if (!isPlaying() || !fileOpen())return;
+
+    if (!available())
+    {
+        fileClose();
+        playNext();
+        return;
+    }
+
+    int bufferedSamples = (pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE;
+    if (bufferedSamples < PCM_BUF_SIZE * 3 / 4)
+    {
+        uint8_t chunk[512];
+        int n = readFile(chunk, sizeof(chunk));
+        if (n > 0)
+        {
+            helix.write(chunk, n);
+        }
+    }
+}
 
 void btInit()
 {

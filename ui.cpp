@@ -1,8 +1,27 @@
 #include "ui.h"
 
-U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx(U8G2_R0, U8X8_PIN_NONE);
-bool updateSecond = false;
 uint8_t updateSleep = 0;
+volatile bool dirty = true;
+
+static const int8_t encoder_transition_table[16] = {
+    0, 1, -1, 0,
+    -1, 0, 0, 1,
+    1, 0, 0, -1,
+    0, -1, 1, 0};
+static bool jack = false;
+static uint8_t connectionState = 0;
+
+static U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx(U8G2_R0, U8X8_PIN_NONE);
+static QueueHandle_t uiQueue;
+static TouchManager touchManager;
+
+static HomeScreen homeScreen_;
+static BTScreen btScreen_;
+static MusicScreen musicScreen_;
+static ListScreen playlistScreen_;
+static MusicPlayerScreen playScreen_;
+
+static BaseScreen *activeScreen_ = &homeScreen_;
 
 inline void drawPlay(int x, int y,bool fwd){
   if(fwd){
@@ -33,18 +52,6 @@ inline void drawHome(int x, int y){
   ctx.drawFrame(x+1,y+4,7,7);
 }
 
-
-QueueHandle_t uiQueue;
-TouchManager touchManager;
-
-HomeScreen homeScreen_;
-BTScreen btScreen_;
-MusicScreen musicScreen_;
-ListScreen playlistScreen_;
-MusicPlayerScreen playScreen_;
-
-BaseScreen *activeScreen_ = &homeScreen_;
-
 void resetPlaybackProgress()
 {
   playScreen_.resetProgress();
@@ -58,6 +65,94 @@ void updatePlaybackProgress(uint32_t samplesDecoded, uint32_t sampleRate, uint32
 void setPlaybackDuration(uint32_t fileSize, uint32_t sampleRate, uint32_t bitrate)
 {
   playScreen_.setPlaybackDuration(fileSize, sampleRate, bitrate);
+}
+
+static bool uiIsPlaying()
+{
+  return playScreen_.play;
+}
+
+static bool uiFileAvailable()
+{
+  return playScreen_.activeFile.available();
+}
+
+static bool uiFileOpen()
+{
+  return static_cast<bool>(playScreen_.activeFile);
+}
+
+static void uiFileClose()
+{
+  playScreen_.activeFile.close();
+}
+
+static int uiFileRead(uint8_t *buffer, size_t length)
+{
+  return playScreen_.activeFile.read(buffer, length);
+}
+
+static void uiNext()
+{
+  playScreen_.next();
+}
+
+void TouchManager::begin(){
+  for (int i = 0; i < AVG_SAMPLES; ++i) {
+    touchSamples[i] = touchRead(TOUCH_PIN);
+    delay(5);
+  }
+
+  sampleIndex = 0;
+  samplesReady = true;
+
+  float sum = 0.0f;
+  for (int i = 0; i < AVG_SAMPLES; ++i) {
+    sum += touchSamples[i];
+  }
+  touchAverage = sum / AVG_SAMPLES;
+}
+
+void TouchManager::processTouchInTask() {
+  if (!samplesReady) {
+    return;
+  }
+
+  const uint16_t val = touchRead(TOUCH_PIN);
+
+  if (touchAverage - val >= THRESHOLD) {
+    if (touchTicks <= TOUCH_TICKS_THRESHHOLD) {
+      if (updateSleep == 2) {
+        ctx.setPowerSave(0);
+      }
+      updateSleep = 0;
+      touchTicks++;
+      if (doubleclick >= 0 && doubleclick < DOUBLECLICK_THRESHOLD) {
+        doubleclick++;
+      }
+    }
+    return;
+  }
+
+  if (touchTicks > 0 && touchTicks < TOUCH_TICKS_THRESHHOLD) {
+    if (doubleclick > 0 && doubleclick < DOUBLECLICK_THRESHOLD) {
+      const UIEvent evt = TOUCH;
+      xQueueSend(uiQueue, &evt, 0);
+      doubleclick = -1;
+    } else {
+      doubleclick = 0;
+    }
+  }
+
+  touchTicks = 0;
+  touchSamples[sampleIndex] = val;
+  sampleIndex = (sampleIndex + 1) % AVG_SAMPLES;
+
+  float sum = 0.0f;
+  for (int i = 0; i < AVG_SAMPLES; ++i) {
+    sum += touchSamples[i];
+  }
+  touchAverage = sum / AVG_SAMPLES;
 }
 
 void BaseScreen::onScroll(bool right)
@@ -149,7 +244,6 @@ void HomeScreen::onRender() {
 
 BTScreen::BTScreen() { cursor_ = 0; limit_ = SENSITIVITY*4;}
 
-static bool jack = false;
 void BTScreen::onTouch(){
   int option = (cursor_/SENSITIVITY);
   if(option == 3 && !jack){
@@ -335,11 +429,6 @@ void MusicPlayerScreen::updateProgress(uint32_t samplesDecoded, uint32_t sampleR
   {
     setPlaybackDuration(activeFile.size(), sampleRate_, bitrate);
   }
-  if(updateSecond)
-  {
-    updateSecond = false;
-    dirty = true;
-  }
 }
 String MusicPlayerScreen::formatTime(uint32_t seconds) const
 {
@@ -493,79 +582,6 @@ void MusicPlayerScreen::prev(){
   dirty = true;
 }
 
-int32_t getDataFrames(Frame *frame, int32_t frame_count)
-{
-    if (!playScreen_.play)
-    {
-        #ifdef BEEP
-            static float phase = 0.0f;
-            const float increment = 2.0f * M_PI * 440.0f / 44100.0f;
-            for (int i = 0; i < frame_count; i++)
-            {
-                int16_t s = (int16_t)(5000 * sinf(phase));
-                frame[i].channel1 = s;
-                frame[i].channel2 = s;
-                phase += increment;
-                if (phase > 2.0f * M_PI)
-                phase -= 2.0f * M_PI;
-            }
-            return frame_count;
-        #else
-            memset(frame, 0, frame_count * sizeof(Frame));
-            return frame_count;
-        #endif        
-    }
-
-    if (pcmMutex == nullptr)
-    {
-        pcmMutex = xSemaphoreCreateMutex();
-    }
-
-    if (pcmMutex != nullptr && xSemaphoreTake(pcmMutex, portMAX_DELAY) == pdTRUE)
-    {
-        for (int i = 0; i < frame_count; i++)
-        {
-            static int16_t lastL = 0, lastR = 0;
-            if (pcmHead != pcmTail)
-            {
-                lastL = pcmBuf[pcmHead];
-                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
-            }
-            if (pcmHead != pcmTail)
-            {
-                lastR = pcmBuf[pcmHead];
-                pcmHead = (pcmHead + 1) % PCM_BUF_SIZE;
-            }
-            frame[i].channel1 = lastL;
-            frame[i].channel2 = lastR;
-        }
-
-        xSemaphoreGive(pcmMutex);
-    }
-    return frame_count;
-}
-
-void readOntoBuffer(){
-  if (playScreen_.play && playScreen_.activeFile)
-  {
-    if (playScreen_.activeFile.available())
-    {
-      int available = (pcmTail - pcmHead + PCM_BUF_SIZE) % PCM_BUF_SIZE;
-      if (available < PCM_BUF_SIZE * 3 / 4)
-      {
-        uint8_t chunk[512];
-        int n = playScreen_.activeFile.read(chunk, sizeof(chunk));
-        if (n > 0)
-          helix.write(chunk, n);
-      }
-    }
-    else
-    {
-      playScreen_.activeFile.close();
-      playScreen_.next();
-    }
-  }
-}
 
 void IRAM_ATTR encoderISR()
 {
@@ -600,7 +616,7 @@ void uiInit()
   ctx.setContrast(1);
   ctx.setDisplayRotation(U8G2_R2);
   ctx.setFont(u8g2_font_ncenB08_tr);
-  ctx.drawStr(55, 45, "LIRA");
+  ctx.drawStr(48, 35, BT_DEVICE_NAME);
   ctx.sendBuffer();
 
 
@@ -609,8 +625,36 @@ void uiInit()
 
   attachInterrupt(digitalPinToInterrupt(KY040_CLK_PIN), encoderISR, CHANGE);
   attachInterrupt(digitalPinToInterrupt(KY040_DT_PIN), encoderISR, CHANGE);
+  assignNext(uiNext);
+  assignFileAvailable(uiFileAvailable);
+  assignFileRead(uiFileRead);
+  assignFileOpen(uiFileOpen);
+  assignFileClose(uiFileClose);
+  assignPlay(uiIsPlaying);
 }
 
+void onConnectionStateChange(esp_a2d_connection_state_t state, void *ptr)
+{
+    const char *names[] = {"DISCONNECTED", "CONNECTING", "CONNECTED", "DISCONNECTING"};
+
+    Serial.println(names[state]);
+
+    if (state == ESP_A2D_CONNECTION_STATE_CONNECTING)
+    {
+        connectionState = 1;
+        playConnecting();
+    }
+    else if(state == ESP_A2D_CONNECTION_STATE_CONNECTED){
+        connectionState = 2;
+        playConnected();
+    }
+    else{
+        connectionState = 0;
+        playDisconnected();
+    }
+
+    dirty = true;
+}
 
 void uiTask(void *pvParameters)
 {
