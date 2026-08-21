@@ -58,7 +58,7 @@ void pcmCallback(MP3FrameInfo &info, int16_t *data, size_t len, void *)
             int next = (pcmTail + 1) % PCM_BUF_SIZE;
             while (next == pcmHead) {
                 xSemaphoreGive(pcmMutex);
-                vTaskDelay(pdMS_TO_TICKS(1));
+                vTaskDelay(pdMS_TO_TICKS(50));
                 xSemaphoreTake(pcmMutex, pdMS_TO_TICKS(5));
                 next = (pcmTail + 1) % PCM_BUF_SIZE;
             }

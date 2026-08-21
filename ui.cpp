@@ -2,13 +2,13 @@
 
 uint8_t updateSleep = 0;
 volatile bool dirty = true;
+bool jack = false;
 
 static const int8_t encoder_transition_table[16] = {
     0, 1, -1, 0,
     -1, 0, 0, 1,
     1, 0, 0, -1,
     0, -1, 1, 0};
-static bool jack = false;
 static uint8_t connectionState = 0;
 
 static U8G2_SSD1306_128X64_NONAME_F_HW_I2C ctx(U8G2_R0, U8X8_PIN_NONE);
@@ -134,7 +134,7 @@ void TouchManager::processTouchInTask() {
     return;
   }
 
-  if (touchTicks > 0 && touchTicks < TOUCH_TICKS_THRESHHOLD) {
+  if (touchTicks > 1 && touchTicks < TOUCH_TICKS_THRESHHOLD) {
     if (doubleclick > 0 && doubleclick < DOUBLECLICK_THRESHOLD) {
       const UIEvent evt = TOUCH;
       xQueueSend(uiQueue, &evt, 0);

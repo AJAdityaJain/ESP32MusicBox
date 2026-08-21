@@ -78,5 +78,8 @@ void loop()
   }
 
   readOntoBuffer();
+  if(jack)
   delay(1);
+  else
+  delay(5);
 }

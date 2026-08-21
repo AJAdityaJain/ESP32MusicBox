@@ -8,7 +8,7 @@
 #define KY040_CLK_PIN 34
 #define KY040_DT_PIN 32
 #define TOUCH_PIN 12
-#define THRESHOLD 25
+#define THRESHOLD 30
 #define AVG_SAMPLES 16
 #define TOUCH_TICKS_THRESHHOLD 15
 #define DOUBLECLICK_THRESHOLD 5
@@ -18,6 +18,7 @@
 
 extern uint8_t updateSleep;
 extern volatile bool dirty;
+extern bool jack;
 
 enum UIEvent
 {
